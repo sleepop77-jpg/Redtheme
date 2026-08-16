@@ -1,0 +1,99 @@
+name: Build APK
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Prepare project
+        id: prep
+        run: |
+          zipfile=$(ls -1 *.zip 2>/dev/null | head -n 1 || true)
+          if [ -n "$zipfile" ]; then
+            mkdir tmp
+            unzip -q "$zipfile" -d tmp
+            inner=$(find tmp -maxdepth 1 -mindepth 1 -type d | head -n 1)
+            if [ -n "$inner" ]; then
+              mv "$inner" project
+            else
+              mv tmp project
+            fi
+            echo "dir=project" >> "$GITHUB_OUTPUT"
+          else
+            echo "dir=." >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Pre-flight scan
+        run: |
+          cd "${{ steps.prep.outputs.dir }}"
+          cat > /tmp/scan.py <<'PY'
+          import os, re, sys
+          import xml.etree.ElementTree as ET
+          bad = 0
+          def err(m):
+              global bad
+              bad += 1
+              print("SCAN ERROR: " + m)
+          for root, _, files in os.walk("."):
+              for f in files:
+                  if f.endswith(".xml"):
+                      p = os.path.join(root, f)
+                      try:
+                          ET.parse(p)
+                      except Exception as e:
+                          err(p + " -> XML PARSE: " + str(e))
+          for n in ["settings.gradle", "app/build.gradle", "app/src/main/AndroidManifest.xml"]:
+              if not os.path.exists(n):
+                  err("MISSING FILE: " + n)
+          ids = set()
+          layouts = set()
+          lay = "app/src/main/res/layout"
+          if os.path.isdir(lay):
+              for f in os.listdir(lay):
+                  if f.endswith(".xml"):
+                      t = open(os.path.join(lay, f), encoding="utf8").read()
+                      ids |= set(re.findall(r"@\+id/(\w+)", t))
+                      layouts.add(f[:-4])
+          for root, _, files in os.walk("."):
+              for f in files:
+                  if f.endswith(".java"):
+                      t = open(os.path.join(root, f), encoding="utf8").read()
+                      for i in re.findall(r"R\.id\.(\w+)", t):
+                          if i not in ids:
+                              err(f + " uses R.id." + i + " but no layout defines it")
+                      for l in re.findall(r"R\.layout\.(\w+)", t):
+                          if l not in layouts:
+                              err(f + " uses R.layout." + l + " but that layout is missing")
+          print("SCAN RESULT: " + ("FAILED, " + str(bad) + " errors" if bad else "CLEAN - likely builds"))
+          sys.exit(1 if bad else 0)
+          PY
+          python3 /tmp/scan.py
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.2"
+
+      - name: Accept Android SDK licenses
+        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null 2>&1 || true
+
+      - name: Build debug APK
+        run: cd "${{ steps.prep.outputs.dir }}" && gradle assembleDebug --no-daemon
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: App-APK
+          path: ${{ steps.prep.outputs.dir }}/app/build/outputs/apk/debug/app-debug.apk
