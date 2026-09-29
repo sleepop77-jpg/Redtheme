@@ -1,4 +1,4 @@
-/* --- PYBRIDGE THEME: NATIONAL PARK · SPLIT LOGIN (no quote card) --- */
+/* --- PYBRIDGE THEME: NATIONAL PARK · SPLIT LOGIN r6 --- */
 :root{
   --sand:#E8E1D1;
   --sand-light:#F5F1E8;
@@ -22,23 +22,23 @@ body{font-family:var(--font-sans);background:var(--sand);color:var(--charcoal)}
 .split{display:grid;grid-template-columns:55fr 45fr;min-height:100vh}
 
 /* --- LEFT HERO --- */
-.hero{position:relative;background:var(--sand);padding:48px 56px 0;overflow:hidden;display:flex;flex-direction:column}
-.hero-lockup{display:flex;align-items:center;gap:14px}
-.hero-lockup img{width:56px;height:auto}
-.hero-lockup .name{font-size:26px;font-weight:800;letter-spacing:-.5px;color:var(--charcoal)}
-.hero-lockup .tag{font-size:13px;color:var(--charcoal);opacity:.72;margin-top:2px}
-.hero h2{font-size:clamp(32px,3.6vw,46px);line-height:1.14;font-weight:800;color:var(--charcoal);margin:52px 0 40px;max-width:540px;letter-spacing:-1px}
+.hero{position:relative;background:var(--sand);padding:64px 56px 0;overflow:hidden;display:flex;flex-direction:column}
+.hero h2{font-size:clamp(32px,3.6vw,46px);line-height:1.14;font-weight:800;color:var(--charcoal);margin:0 0 40px;max-width:540px;letter-spacing:-1px}
 .hero-art{position:absolute;left:0;right:0;bottom:0;width:100%;height:min(60%,52vh);object-fit:cover;object-position:center bottom;pointer-events:none;user-select:none}
 @media(max-height:600px){.hero-art{height:44%}}
 
 /* --- RIGHT FORM COLUMN --- */
 .form-col{background:var(--sand-light);border-left:1px solid rgba(167,162,135,.35);padding:28px clamp(28px,6vw,96px);display:flex;flex-direction:column}
-.mobile-brand{display:none;align-items:center;gap:10px;margin-bottom:12px}
-.mobile-brand img{width:36px;height:auto}
-.mobile-brand strong{font-size:18px;color:var(--charcoal)}
 .help-top{align-self:flex-end;font-size:14px;font-weight:600;color:var(--olive-mid);text-decoration:none}
 .help-top:hover{text-decoration:underline}
 .form-inner{margin:auto 0;width:100%;max-width:520px;padding:48px 0}
+
+/* --- LOCKUP (logo + name + tagline) --- */
+.lockup{display:flex;align-items:center;gap:12px;margin-bottom:30px}
+.lockup img{width:46px;height:auto;mix-blend-mode:multiply}
+.lockup .name{font-size:22px;font-weight:800;letter-spacing:-.5px;color:var(--charcoal)}
+.lockup .tag{font-size:12.5px;color:var(--olive-mid);margin-top:2px;font-weight:600}
+
 .form-inner h1{font-size:clamp(28px,2.6vw,40px);font-weight:800;letter-spacing:-1px;color:var(--charcoal)}
 .sub{margin:12px 0 40px;font-size:15px;line-height:1.55;color:var(--olive-mid)}
 label{display:block;font-size:12.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--olive-mid);margin-bottom:10px}
@@ -67,16 +67,14 @@ label{display:block;font-size:12.5px;font-weight:700;letter-spacing:.08em;text-t
 .status.success{background:rgba(125,168,122,.12);color:#4c7a49;border:1px solid rgba(125,168,122,.3)}
 .hidden{display:none!important}
 
+/* --- SAFETY: bury any legacy ghost nodes for good --- */
+.quote-card,.mobile-brand{display:none!important}
+
 /* --- MOBILE --- */
 @media(max-width:820px){
   body{overflow:auto}
   .split{grid-template-columns:1fr}
   .hero{display:none}
   .form-col{border-left:none;padding:24px 22px 48px}
-  .mobile-brand{display:flex}
   .form-inner{padding:24px 0;margin:0}
 }
-/* kill the legacy quote-card sliver wherever it still exists in DOM */
-.quote-card{display:none!important}
-/* melt the logo's baked-in light square into the panel sand */
-.hero-lockup img,.mobile-brand img{mix-blend-mode:multiply}
