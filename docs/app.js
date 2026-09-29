@@ -1,4 +1,4 @@
-// PyBridge Core Logic - Phase 1: Auth & Routing Skeleton
+// PyBridge Core Logic - Phase 1: Auth, Routing & Settings
 (function(){
   if(window.__pyBridge)return;
   window.__pyBridge=true;
@@ -17,11 +17,14 @@
     sidebar: document.getElementById('sidebar'),
     views: {
       auth: document.getElementById('view-auth'),
-      dashboard: document.getElementById('view-dashboard')
+      dashboard: document.getElementById('view-dashboard'),
+      settings: document.getElementById('view-settings')
     },
     loginForm: document.getElementById('login-form'),
     patInput: document.getElementById('pat-input'),
-    navItems: document.querySelectorAll('.nav-item')
+    navItems: document.querySelectorAll('.nav-item'),
+    logoutBtn: document.getElementById('logout-btn'),
+    userDisplay: document.getElementById('user-display-name')
   };
 
   // --- INIT ---
@@ -85,8 +88,10 @@
   }
 
   function logout() {
-    localStorage.removeItem('pb_auth');
-    location.reload();
+    if(confirm("Are you sure you want to disconnect?")) {
+      localStorage.removeItem('pb_auth');
+      location.reload();
+    }
   }
 
   // --- ROUTING ---
@@ -117,6 +122,11 @@
     els.navItems.forEach(item => {
       item.classList.toggle('active', item.dataset.route === viewName);
     });
+
+    // Populate User Info in Settings
+    if(viewName === 'settings' && state.user) {
+      els.userDisplay.textContent = state.user.login;
+    }
   }
 
   // --- EVENTS ---
@@ -131,8 +141,9 @@
       });
     });
 
-    // Global Logout Hook (for future settings page)
-    window.pbLogout = logout;
+    if(els.logoutBtn) {
+      els.logoutBtn.addEventListener('click', logout);
+    }
   }
 
   // Boot

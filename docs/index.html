@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>PyBridge · From AI Chats to Your GitHub</title>
+<link rel="icon" type="image/svg+xml" href="logo.svg">
 <link rel="stylesheet" href="style.css?v=r1">
 </head>
 <body>
@@ -16,7 +17,7 @@
   <!-- LEFT SIDEBAR (Hidden on Auth, Visible later) -->
   <aside id="sidebar" class="hidden">
     <div class="brand">
-      <svg class="logo-icon" viewBox="0 0 64 64"><path d="M32 8 L12 56 M32 8 L52 56 M16 40 L48 40 M24 24 L40 24" stroke="currentColor" stroke-width="4" fill="none"/><circle cx="32" cy="8" r="3" fill="currentColor"/></svg>
+      <img src="logo.svg" alt="" class="logo-icon">
       <span>PyBridge</span>
     </div>
     <nav>
@@ -38,10 +39,10 @@
   <main id="content">
     
     <!-- VIEW: AUTH / LOGIN -->
-    <section id="view-auth" class="view">
+    <section id="view-auth" class="view flex-center">
       <div class="login-container">
         <header class="login-header">
-          <svg class="logo-large" viewBox="0 0 64 64"><path d="M32 8 L12 56 M32 8 L52 56 M16 40 L48 40 M24 24 L40 24" stroke="var(--olive)" stroke-width="4" fill="none"/><circle cx="32" cy="8" r="3" fill="var(--olive)"/></svg>
+          <img src="logo.svg" alt="PyBridge Logo" class="logo-large">
           <h1>Welcome back</h1>
           <p class="subtitle">Connect your GitHub account to start bridging AI code into repositories.</p>
         </header>
@@ -75,7 +76,28 @@
     <!-- VIEW: DASHBOARD (Placeholder for Phase 2) -->
     <section id="view-dashboard" class="view hidden">
       <h2>Dashboard</h2>
-      <p>You are connected!</p>
+      <p>You are connected! Next up: The Paste Area.</p>
+    </section>
+
+    <!-- VIEW: SETTINGS -->
+    <section id="view-settings" class="view hidden">
+      <h2>Settings</h2>
+      <div class="settings-panel">
+        <div class="setting-row">
+          <div>
+            <strong>Account Status</strong>
+            <p class="text-muted">Connected as <span id="user-display-name">...</span></p>
+          </div>
+          <button id="logout-btn" class="btn-danger">Disconnect & Logout</button>
+        </div>
+        <hr style="border:none;border-top:1px solid var(--khaki);margin:24px 0;">
+        <div class="setting-row">
+          <div>
+            <strong>About PyBridge</strong>
+            <p class="text-muted">Version 1.0 · National Park Edition</p>
+          </div>
+        </div>
+      </div>
     </section>
 
   </main>

@@ -49,7 +49,7 @@ body{
   width:100vw;
 }
 .auth-view #sidebar{display:none}
-.auth-view #content{flex:1;display:flex;align-items:center;justify-content:center}
+.auth-view #content{flex:1;display:flex;align-items:center;justify-content:center;padding:20px}
 
 /* --- SIDEBAR --- */
 #sidebar{
@@ -71,7 +71,7 @@ body{
   font-size:18px;
   color:var(--olive);
 }
-.logo-icon{width:32px;height:32px;color:var(--olive)}
+.logo-icon{width:32px;height:auto;display:block}
 nav{display:flex;flex-direction:column;gap:4px}
 .nav-item{
   text-align:left;
@@ -107,6 +107,7 @@ nav{display:flex;flex-direction:column;gap:4px}
 }
 .view{max-width:800px;margin:0 auto;width:100%}
 .hidden{display:none!important}
+.flex-center{display:flex !important;align-items:center;justify-content:center;min-height:calc(100vh - 80px)}
 
 /* --- LOGIN CARD --- */
 .login-container{
@@ -116,10 +117,11 @@ nav{display:flex;flex-direction:column;gap:4px}
   box-shadow:var(--shadow-md);
   max-width:480px;
   width:100%;
+  margin:0 auto; /* Ensures horizontal centering even if flex fails */
   border:1px solid rgba(167, 162, 135, 0.3);
 }
 .login-header{text-align:center;margin-bottom:32px}
-.logo-large{width:64px;height:64px;margin-bottom:16px}
+.logo-large{width:80px;height:auto;margin-bottom:16px;display:block;margin-inline:auto}
 h1{font-size:28px;color:var(--olive);margin-bottom:8px}
 .subtitle{color:var(--khaki);font-size:14px;line-height:1.5}
 
@@ -185,3 +187,30 @@ input:focus{outline:none;border-color:var(--olive);box-shadow:0 0 0 3px rgba(62,
 }
 .how-to-box a{color:var(--olive);text-decoration:underline}
 .how-to-box code{background:rgba(167, 162, 135, 0.2);padding:2px 6px;border-radius:4px;font-family:var(--font-mono);font-size:12px}
+
+/* --- SETTINGS PANEL --- */
+.settings-panel{
+  background:var(--white);
+  padding:32px;
+  border-radius:var(--radius-lg);
+  box-shadow:var(--shadow-sm);
+  max-width:600px;
+}
+.setting-row{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:20px;
+}
+.text-muted{font-size:13px;color:var(--khaki);margin-top:4px}
+.btn-danger{
+  background:transparent;
+  border:1px solid var(--error);
+  color:var(--error);
+  padding:10px 20px;
+  border-radius:var(--radius-md);
+  font-weight:600;
+  cursor:pointer;
+  transition:all 0.2s;
+}
+.btn-danger:hover{background:var(--error);color:white}
