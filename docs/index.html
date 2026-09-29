@@ -49,6 +49,34 @@
   </section>
 
 </div>
+
+<!-- REPO PICKER VIEW -->
+<section id="view-repos" class="picker-view hidden">
+  <button id="repo-open" class="picker-trigger" type="button">
+    <span class="ring">+</span>
+    <span class="t">Select a repository</span>
+  </button>
+  <div class="picker-card hidden" id="picker-card">
+    <h1>Choose a repository</h1>
+    <p class="sub">Pick where PyBridge should push your AI code.</p>
+    <input id="repo-search" class="picker-search" placeholder="Search repos…" autocomplete="off">
+    <div id="repo-list" class="repo-list"></div>
+    <div id="scope-line" class="scope-line hidden"></div>
+    <div id="repo-probe" class="status hidden"></div>
+    <button id="repo-continue" class="btn-connect" disabled>Continue to Dashboard →</button>
+  </div>
+</section>
+
+<!-- DASHBOARD PLACEHOLDER (real dashboard = next phase) -->
+<section id="view-dash" class="picker-view hidden">
+  <div class="picker-card">
+    <h1 id="dash-title">—</h1>
+    <p class="sub">Repository locked in. The full dashboard arrives in the next phase.</p>
+    <div id="dash-probe" class="status success"></div>
+    <button id="dash-switch" class="btn-connect">Switch repository</button>
+  </div>
+</section>
+
 <script src="app.js?v=r6"></script>
 </body>
 </html>
