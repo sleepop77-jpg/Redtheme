@@ -120,6 +120,9 @@
     show('dash');
   }
   var sw=$('#dash-switch');
+  var bRepos=$('#back-repos'),bDash=$('#back-dash');
+  if(bRepos)bRepos.addEventListener('click',function(){show('login')});
+  if(bDash)bDash.addEventListener('click',function(){show('repos')});
   if(sw)sw.addEventListener('click',function(){
     localStorage.removeItem('pb_repo');state.repo=null;selected=null;probeOk=false;
     cont.disabled=true;card.classList.add('hidden');trigger.classList.remove('hidden');
