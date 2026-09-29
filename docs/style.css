@@ -28,7 +28,8 @@ body{font-family:var(--font-sans);background:var(--sand);color:var(--charcoal)}
 .hero-lockup .name{font-size:26px;font-weight:800;letter-spacing:-.5px;color:var(--charcoal)}
 .hero-lockup .tag{font-size:13px;color:var(--charcoal);opacity:.72;margin-top:2px}
 .hero h2{font-size:clamp(32px,3.6vw,46px);line-height:1.14;font-weight:800;color:var(--charcoal);margin:52px 0 40px;max-width:540px;letter-spacing:-1px}
-.hero-art{position:absolute;left:0;bottom:0;width:100%;height:auto;pointer-events:none;user-select:none}
+.hero-art{position:absolute;left:0;right:0;bottom:0;width:100%;height:min(60%,52vh);object-fit:cover;object-position:center bottom;pointer-events:none;user-select:none}
+@media(max-height:600px){.hero-art{height:44%}}
 
 /* --- RIGHT FORM COLUMN --- */
 .form-col{background:var(--sand-light);border-left:1px solid rgba(167,162,135,.35);padding:28px clamp(28px,6vw,96px);display:flex;flex-direction:column}
