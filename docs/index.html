@@ -3,59 +3,54 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PyBridge · Connect</title>
-<!-- Reference your manual image upload here -->
+<title>PyBridge · From AI Chats to Your GitHub</title>
 <link rel="icon" href="logo.png" type="image/png">
-<link rel="stylesheet" href="style.css?v=r3">
+<link rel="stylesheet" href="style.css?v=r4">
 </head>
 <body>
+<div class="split">
 
-<!-- Background Art Layer (Subtle Mountains) -->
-<div class="bg-mountains"></div>
-
-<!-- LOGIN CONTAINER (Centered) -->
-<main id="login-wrapper">
-  <div class="login-card">
-    
-    <!-- HEADER -->
-    <header class="login-header">
-      <!-- REPLACE 'logo.png' WITH YOUR UPLOADED FILENAME IF DIFFERENT -->
-      <img src="logo.png" alt="PyBridge Logo" class="brand-logo" onerror="this.style.display='none'">
-      <h1>Welcome to PyBridge</h1>
-      <p class="subtitle">From AI Chats → To Your GitHub</p>
-    </header>
-
-    <!-- FORM -->
-    <form id="auth-form">
-      <div class="input-group">
-        <label for="pat-input">GitHub Personal Access Token</label>
-        <input type="password" id="pat-input" placeholder="ghp_xxxxxxxxxxxx..." autocomplete="off" required>
-        <div class="helper-text">
-          <span>Requires <code>repo</code> scope to create commits.</span>
-        </div>
+  <!-- LEFT: HERO PANEL (your uploaded image lives here) -->
+  <section class="hero">
+    <div class="hero-lockup">
+      <img src="logo.png" alt="PyBridge logo" onerror="this.style.display='none'">
+      <div>
+        <div class="name">PyBridge</div>
+        <div class="tag">From AI Chats → To Your GitHub</div>
       </div>
-      
-      <button type="submit" id="connect-btn" class="btn-primary">
-        Connect Account
-      </button>
-    </form>
+    </div>
+    <h2>Less time on setup,<br>more time on building.</h2>
+    <div class="quote-card"><span class="glyph">❝</span><span>— PyBridge</span></div>
+    <img class="hero-art" src="hero.png" alt="" onerror="this.style.display='none'">
+  </section>
 
-    <!-- INSTRUCTIONS -->
-    <details class="instructions">
-      <summary>How do I get a token?</summary>
-      <ol>
-        <li>Go to <a href="https://github.com/settings/tokens/new" target="_blank">GitHub Developer Settings</a>.</li>
-        <li>Note: "PyBridge", Expiration: 90 days.</li>
-        <li>Select scope: <strong>repo</strong> (Full control).</li>
-        <li>Click "Generate token" and paste it above.</li>
-      </ol>
-    </details>
+  <!-- RIGHT: CONNECTION COLUMN -->
+  <section class="form-col">
+    <div class="mobile-brand"><img src="logo.png" alt="" onerror="this.style.display='none'"><strong>PyBridge</strong></div>
+    <a class="help-top" href="https://docs.github.com/get-started/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens" target="_blank" rel="noopener">Need help?</a>
+    <div class="form-inner">
+      <h1>Connect your GitHub</h1>
+      <p class="sub">Paste your Personal Access Token to start bridging AI code into repositories.</p>
+      <form id="auth-form">
+        <label for="pat-input">Personal Access Token</label>
+        <input type="password" id="pat-input" placeholder="ghp_xxxxxxxxxxxx" autocomplete="off" required>
+        <div class="helper">Requires <strong>repo</strong> scope to create commits.</div>
+        <button type="submit" id="connect-btn" class="btn-connect">Connect Account →</button>
+        <div id="status-msg" class="status hidden"></div>
+      </form>
+      <details class="howto" id="howto">
+        <summary>How do I get a token?</summary>
+        <ol>
+          <li>Open <a href="https://github.com/settings/tokens/new" target="_blank">github.com/settings/tokens/new</a>.</li>
+          <li>Note: “PyBridge” · Expiration: 90 days.</li>
+          <li>Scope: check <strong>repo</strong> (full control).</li>
+          <li>Generate, copy, paste above. Done.</li>
+        </ol>
+      </details>
+    </div>
+  </section>
 
-    <!-- STATUS MESSAGE -->
-    <div id="status-msg" class="status hidden"></div>
-  </div>
-</main>
-
-<script src="app.js?v=r3"></script>
+</div>
+<script src="app.js?v=r4"></script>
 </body>
 </html>
