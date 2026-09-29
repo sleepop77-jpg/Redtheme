@@ -3,106 +3,59 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PyBridge · From AI Chats to Your GitHub</title>
-<link rel="icon" type="image/svg+xml" href="logo.svg">
-<link rel="stylesheet" href="style.css?v=r2">
+<title>PyBridge · Connect</title>
+<!-- Reference your manual image upload here -->
+<link rel="icon" href="logo.png" type="image/png">
+<link rel="stylesheet" href="style.css?v=r3">
 </head>
 <body>
-<!-- Background Art Layer -->
+
+<!-- Background Art Layer (Subtle Mountains) -->
 <div class="bg-mountains"></div>
 
-<!-- App Shell -->
-<div id="app" class="auth-view">
-  
-  <!-- LEFT SIDEBAR (Hidden on Auth, Visible later) -->
-  <aside id="sidebar" class="hidden">
-    <div class="brand">
-      <img src="logo.svg" alt="" class="logo-icon">
-      <span>PyBridge</span>
-    </div>
-    <nav>
-      <button data-route="dashboard" class="nav-item active">Dashboard</button>
-      <button data-route="push" class="nav-item">New Push</button>
-      <button data-route="repos" class="nav-item">Repositories</button>
-      <button data-route="history" class="nav-item">History</button>
-      <button data-route="settings" class="nav-item">Settings</button>
-    </nav>
-    <div class="sidebar-footer">
-      <div class="quote-card">
-        <p>"Less time on setup,<br>more time on building."</p>
-        <small>— PyBridge</small>
-      </div>
-    </div>
-  </aside>
-
-  <!-- MAIN CONTENT AREA -->
-  <main id="content">
+<!-- LOGIN CONTAINER (Centered) -->
+<main id="login-wrapper">
+  <div class="login-card">
     
-    <!-- VIEW: AUTH / LOGIN -->
-    <section id="view-auth" class="view flex-center">
-      <div class="login-container">
-        <header class="login-header">
-          <img src="logo.svg" alt="PyBridge Logo" class="logo-large">
-          <h1>Welcome back</h1>
-          <p class="subtitle">Connect your GitHub account to start bridging AI code into repositories.</p>
-        </header>
+    <!-- HEADER -->
+    <header class="login-header">
+      <!-- REPLACE 'logo.png' WITH YOUR UPLOADED FILENAME IF DIFFERENT -->
+      <img src="logo.png" alt="PyBridge Logo" class="brand-logo" onerror="this.style.display='none'">
+      <h1>Welcome to PyBridge</h1>
+      <p class="subtitle">From AI Chats → To Your GitHub</p>
+    </header>
 
-        <form id="login-form">
-          <div class="input-group">
-            <label for="pat-input">Personal Access Token</label>
-            <input type="password" id="pat-input" placeholder="ghp_xxxxxxxxxxxx..." autocomplete="off">
-            <div class="helper-text">
-              <svg class="icon-info" viewBox="0 0 16 16"><circle cx="8" cy="8" r="7" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 4v4m0 4h.01" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-              <span>We need 'repo' scope to create and push commits.</span>
-            </div>
-          </div>
-          
-          <button type="submit" class="btn-primary">Connect Account →</button>
-        </form>
-
-        <details class="how-to-box">
-          <summary>Don't have a token? Here's how:</summary>
-          <ol>
-            <li>Go to <a href="https://github.com/settings/tokens/new" target="_blank">GitHub Developer Settings</a>.</li>
-            <li>Name it "PyBridge".</li>
-            <li>Check the <code>repo</code> box (full control).</li>
-            <li>Click "Generate token" at the bottom.</li>
-            <li>Copy and paste it above.</li>
-          </ol>
-        </details>
-      </div>
-    </section>
-
-    <!-- VIEW: DASHBOARD (Placeholder for Phase 2) -->
-    <section id="view-dashboard" class="view hidden">
-      <h2>Dashboard</h2>
-      <p>You are connected! Next up: The Paste Area.</p>
-    </section>
-
-    <!-- VIEW: SETTINGS -->
-    <section id="view-settings" class="view hidden">
-      <h2>Settings</h2>
-      <div class="settings-panel">
-        <div class="setting-row">
-          <div>
-            <strong>Account Status</strong>
-            <p class="text-muted">Connected as <span id="user-display-name">...</span></p>
-          </div>
-          <button id="logout-btn" class="btn-danger">Disconnect & Logout</button>
-        </div>
-        <hr style="border:none;border-top:1px solid var(--khaki);margin:24px 0;">
-        <div class="setting-row">
-          <div>
-            <strong>About PyBridge</strong>
-            <p class="text-muted">Version 1.0 · National Park Edition</p>
-          </div>
+    <!-- FORM -->
+    <form id="auth-form">
+      <div class="input-group">
+        <label for="pat-input">GitHub Personal Access Token</label>
+        <input type="password" id="pat-input" placeholder="ghp_xxxxxxxxxxxx..." autocomplete="off" required>
+        <div class="helper-text">
+          <span>Requires <code>repo</code> scope to create commits.</span>
         </div>
       </div>
-    </section>
+      
+      <button type="submit" id="connect-btn" class="btn-primary">
+        Connect Account
+      </button>
+    </form>
 
-  </main>
-</div>
+    <!-- INSTRUCTIONS -->
+    <details class="instructions">
+      <summary>How do I get a token?</summary>
+      <ol>
+        <li>Go to <a href="https://github.com/settings/tokens/new" target="_blank">GitHub Developer Settings</a>.</li>
+        <li>Note: "PyBridge", Expiration: 90 days.</li>
+        <li>Select scope: <strong>repo</strong> (Full control).</li>
+        <li>Click "Generate token" and paste it above.</li>
+      </ol>
+    </details>
 
-<script src="app.js?v=r2"></script>
+    <!-- STATUS MESSAGE -->
+    <div id="status-msg" class="status hidden"></div>
+  </div>
+</main>
+
+<script src="app.js?v=r3"></script>
 </body>
 </html>

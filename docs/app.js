@@ -1,151 +1,80 @@
-// PyBridge Core Logic - Phase 1: Auth, Routing & Settings
-(function(){
-  if(window.__pyBridge)return;
-  window.__pyBridge=true;
+// PyBridge Logic - STEP 1: Login Only
+(function() {
+  if (window.__pyBridgeAuth) return;
+  window.__pyBridgeAuth = true;
 
-  // --- STATE ---
-  const state = {
-    authenticated: false,
-    user: null,
-    pat: '',
-    currentView: 'auth'
-  };
+  const form = document.getElementById('auth-form');
+  const input = document.getElementById('pat-input');
+  const btn = document.getElementById('connect-btn');
+  const statusEl = document.getElementById('status-msg');
 
-  // --- DOM REFS ---
-  const els = {
-    app: document.getElementById('app'),
-    sidebar: document.getElementById('sidebar'),
-    views: {
-      auth: document.getElementById('view-auth'),
-      dashboard: document.getElementById('view-dashboard'),
-      settings: document.getElementById('view-settings')
-    },
-    loginForm: document.getElementById('login-form'),
-    patInput: document.getElementById('pat-input'),
-    navItems: document.querySelectorAll('.nav-item'),
-    logoutBtn: document.getElementById('logout-btn'),
-    userDisplay: document.getElementById('user-display-name')
-  };
-
-  // --- INIT ---
-  function init() {
-    checkStoredAuth();
-    bindEvents();
-    renderRoute(state.currentView);
+  function showStatus(msg, type) {
+    statusEl.textContent = msg;
+    statusEl.className = `status ${type}`;
+    statusEl.classList.remove('hidden');
   }
 
-  // --- AUTH LOGIC ---
-  async function checkStoredAuth() {
-    try {
-      const stored = localStorage.getItem('pb_auth');
-      if(stored) {
-        const data = JSON.parse(stored);
-        if(data.pat && data.user) {
-          state.pat = data.pat;
-          state.user = data.user;
-          state.authenticated = true;
-          state.currentView = 'dashboard';
-        }
-      }
-    } catch(e) { console.warn("Auth restore failed", e); }
-  }
-
-  async function handleLogin(e) {
+  async function handleConnect(e) {
     e.preventDefault();
-    const pat = els.patInput.value.trim();
-    if(!pat) return alert("Please enter a valid token.");
+    const token = input.value.trim();
+    
+    if (!token) {
+      showStatus("Please enter a token.", "error");
+      return;
+    }
 
-    const btn = els.loginForm.querySelector('button');
+    // UI Loading State
     btn.disabled = true;
-    btn.textContent = "Verifying...";
+    btn.innerHTML = "Verifying...";
+    statusEl.classList.add('hidden');
 
     try {
-      // Validate against GitHub API
+      // 1. Validate Token with GitHub
       const res = await fetch("https://api.github.com/user", {
-        headers: { Authorization: `Bearer ${pat}` }
+        headers: {
+          "Authorization": `Bearer ${token}`,
+          "Accept": "application/vnd.github+json"
+        }
       });
-      
-      if(!res.ok) throw new Error(`Invalid Token (${res.status})`);
-      
-      const user = await res.json();
-      
-      // Save State
-      state.pat = pat;
-      state.user = user;
-      state.authenticated = true;
-      localStorage.setItem('pb_auth', JSON.stringify({ pat, user }));
-      
-      // Transition
-      state.currentView = 'dashboard';
-      renderRoute('dashboard');
-      
-    } catch(err) {
-      alert("Connection Failed: " + err.message);
-    } finally {
-      btn.disabled = false;
-      btn.textContent = "Connect Account →";
-    }
-  }
 
-  function logout() {
-    if(confirm("Are you sure you want to disconnect?")) {
-      localStorage.removeItem('pb_auth');
-      location.reload();
-    }
-  }
-
-  // --- ROUTING ---
-  function renderRoute(viewName) {
-    // Hide all views
-    Object.values(els.views).forEach(el => el.classList.add('hidden'));
-    
-    // Show target view
-    if(els.views[viewName]) {
-      els.views[viewName].classList.remove('hidden');
-    } else {
-      // Fallback to dashboard if unknown route but authenticated
-      if(state.authenticated && els.views.dashboard) {
-         els.views.dashboard.classList.remove('hidden');
+      if (!res.ok) {
+        throw new Error(`Invalid Token (HTTP ${res.status})`);
       }
-    }
 
-    // Toggle Sidebar Visibility
-    if(state.authenticated) {
-      els.app.classList.remove('auth-view');
-      els.sidebar.classList.remove('hidden');
-    } else {
-      els.app.classList.add('auth-view');
-      els.sidebar.classList.add('hidden');
-    }
+      const user = await res.json();
 
-    // Update Nav Active State
-    els.navItems.forEach(item => {
-      item.classList.toggle('active', item.dataset.route === viewName);
-    });
+      // 2. Save to LocalStorage
+      localStorage.setItem('pb_auth', JSON.stringify({
+        pat: token,
+        user: user,
+        timestamp: Date.now()
+      }));
 
-    // Populate User Info in Settings
-    if(viewName === 'settings' && state.user) {
-      els.userDisplay.textContent = state.user.login;
-    }
-  }
+      // 3. Success Feedback
+      showStatus(`Connected as ${user.login}! Redirecting...`, "success");
+      
+      // 4. Redirect to Dashboard (Phase 2 will build this page)
+      // For now, we just reload or go to a placeholder
+      setTimeout(() => {
+        // In Phase 2, this will be: window.location.href = 'dashboard.html';
+        // For Step 1, we alert success so you know it worked.
+        alert("Login Successful! User: " + user.login + "\n\nNext step: We will build the Dashboard.");
+        btn.disabled = false;
+        btn.innerHTML = "Connect Account";
+      }, 1000);
 
-  // --- EVENTS ---
-  function bindEvents() {
-    els.loginForm.addEventListener('submit', handleLogin);
-    
-    els.navItems.forEach(item => {
-      item.addEventListener('click', () => {
-        const route = item.dataset.route;
-        state.currentView = route;
-        renderRoute(route);
-      });
-    });
-
-    if(els.logoutBtn) {
-      els.logoutBtn.addEventListener('click', logout);
+    } catch (err) {
+      showStatus("Connection Failed: " + err.message, "error");
+      btn.disabled = false;
+      btn.innerHTML = "Connect Account";
     }
   }
 
-  // Boot
-  init();
+  if (form) {
+    form.addEventListener('submit', handleConnect);
+  }
+
+  // Auto-focus input
+  if (input) input.focus();
+
 })();
