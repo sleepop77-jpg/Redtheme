@@ -1,4 +1,4 @@
-/* --- PYBRIDGE THEME: NATIONAL PARK · SPLIT LOGIN --- */
+/* --- PYBRIDGE THEME: NATIONAL PARK · SPLIT LOGIN (no quote card) --- */
 :root{
   --sand:#E8E1D1;
   --sand-light:#F5F1E8;
@@ -27,10 +27,7 @@ body{font-family:var(--font-sans);background:var(--sand);color:var(--charcoal)}
 .hero-lockup img{width:56px;height:auto}
 .hero-lockup .name{font-size:26px;font-weight:800;letter-spacing:-.5px;color:var(--charcoal)}
 .hero-lockup .tag{font-size:13px;color:var(--charcoal);opacity:.72;margin-top:2px}
-.hero h2{font-size:clamp(32px,3.6vw,46px);line-height:1.14;font-weight:800;color:var(--charcoal);margin:52px 0 26px;max-width:540px;letter-spacing:-1px}
-.quote-card{display:inline-flex;align-items:center;gap:12px;background:var(--white);border:1px solid var(--khaki);border-radius:12px;padding:14px 24px;box-shadow:var(--shadow-sm);width:max-content}
-.quote-card .glyph{font-size:26px;line-height:1;color:var(--olive-mid);font-weight:800}
-.quote-card span:last-child{font-weight:700;color:var(--charcoal);font-size:15px}
+.hero h2{font-size:clamp(32px,3.6vw,46px);line-height:1.14;font-weight:800;color:var(--charcoal);margin:52px 0 40px;max-width:540px;letter-spacing:-1px}
 .hero-art{position:absolute;left:0;bottom:0;width:100%;height:auto;pointer-events:none;user-select:none}
 
 /* --- RIGHT FORM COLUMN --- */
