@@ -160,6 +160,9 @@ show('dash');
     chatIn.value='';chatIn.focus();
   }
   if(sendBtn)sendBtn.addEventListener('click',sendChat);
+  function armSend(){if(sendBtn&&chatIn)sendBtn.classList.toggle('armed',chatIn.value.trim().length>0)}
+  if(chatIn)chatIn.addEventListener('input',armSend);
+  armSend();
   if(chatIn)chatIn.addEventListener('keydown',function(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendChat()}});
   var sw=$('#dash-switch');
 var bRepos=$('#back-repos'),bDash=$('#back-dash');
