@@ -134,12 +134,14 @@ localStorage.setItem('pb_repo',JSON.stringify(state.repo));
 enterDash();
 });
 /* ---- DASHBOARD PLACEHOLDER ---- */
-function enterDash(){
-var t=$('#dash-title'),p=$('#dash-probe');
-if(t)t.textContent=state.repo?state.repo.full_name:'—';
-if(p){p.className='status success';p.textContent='✓ push verified · branch '+(state.repo?state.repo.branch:'—')}
-show('dash');
-}
+  function enterDash(){
+    var t=$('#dash-title'),p=$('#dash-probe');
+    if(t)t.textContent=state.repo?state.repo.full_name:'—';
+    if(p){p.className='status success';p.textContent='✓ push verified · branch '+(state.repo?state.repo.branch:'—')}
+    var tn=$('#tb-name');if(tn)tn.textContent=state.repo?state.repo.full_name:'—';
+    loadTree();
+    show('dash');
+  }
   var segs=document.querySelectorAll('.seg-btn');
   segs.forEach(function(s){s.addEventListener('click',function(){
     segs.forEach(function(o){o.classList.remove('active')});
@@ -167,6 +169,82 @@ show('dash');
   if(chatIn)chatIn.addEventListener('input',armSend);
   armSend();
   if(chatIn)chatIn.addEventListener('keydown',function(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendChat()}});
+  /* ---- FILE TREE + IN-BROWSER EDITOR ---- */
+  var openPaths={},edPath=null;
+  async function loadTree(){
+    if(!state.repo)return;
+    var R='/repos/'+state.repo.full_name;
+    try{
+      var ref=await apiGet(R+'/git/refs/heads/'+state.repo.branch);
+      var cm=await apiGet(R+'/git/commits/'+ref.json.object.sha);
+      var tr=await apiGet(R+'/git/trees/'+cm.json.tree.sha+'?recursive=1');
+      renderTree(tr.json.tree);
+    }catch(e){}
+  }
+  function renderTree(entries){
+    var host=$('#file-tree');if(!host)return;host.innerHTML='';
+    var root={kids:{}};
+    entries.forEach(function(e){
+      if(e.type!=='blob')return;
+      var parts=e.path.split('/'),node=root;
+      for(var i=0;i<parts.length-1;i++){node.kids[parts[i]]=node.kids[parts[i]]||{kids:{}};node=node.kids[parts[i]]}
+      node.kids[parts[parts.length-1]]={file:true};
+    });
+    host.appendChild(buildLevel(root,''));
+  }
+  function buildLevel(node,prefix){
+    var wrap=document.createElement('div');
+    Object.keys(node.kids).sort(function(a,b){var ka=node.kids[a],kb=node.kids[b];if((ka.file?1:0)!==(kb.file?1:0))return (ka.file?1:0)-(kb.file?1:0);return a.localeCompare(b)}).forEach(function(name){
+      var path=prefix?prefix+'/'+name:name,k=node.kids[name],depth=path.split('/').length-1;
+      if(k.file){
+        var r=document.createElement('div');r.className='tb-row file';r.style.paddingLeft=(8+14*depth)+'px';r.textContent=name;
+        r.onclick=function(){openEditor(path)};
+        wrap.appendChild(r);
+      }else{
+        var box=document.createElement('div');box.className='tb-node'+(openPaths[path]?' tb-open':'');
+        var d=document.createElement('div');d.className='tb-row dir';d.style.paddingLeft=(8+14*depth)+'px';
+        d.innerHTML='<span class="car">▸</span>';d.appendChild(document.createTextNode(name));
+        d.onclick=function(){openPaths[path]=!openPaths[path];box.classList.toggle('tb-open')};
+        var kids=document.createElement('div');kids.className='tb-kids';kids.appendChild(buildLevel(k,path));
+        box.appendChild(d);box.appendChild(kids);wrap.appendChild(box);
+      }
+    });
+    return wrap;
+  }
+  function openEditor(path){
+    edPath=path;
+    var ov=$('#editor-overlay');if(!ov)return;
+    $('#ed-path').textContent=path;$('#ed-status').textContent='loading…';$('#ed-body').value='';
+    ov.classList.remove('hidden');
+    apiGet('/repos/'+state.repo.full_name+'/contents/'+path+'?ref='+state.repo.branch).then(function(r){
+      $('#ed-body').value=b64utf8(r.json.content);
+      $('#ed-status').textContent='ready — edits commit straight to '+state.repo.branch;
+    }).catch(function(e){$('#ed-status').textContent='✗ '+e.message});
+  }
+  async function commitEntries(files,msg){
+    var R='/repos/'+state.repo.full_name,baseSha=null;
+    try{var ref=await apiGet(R+'/git/refs/heads/'+state.repo.branch);baseSha=ref.json.object.sha}catch(e){}
+    var baseTree=null;
+    if(baseSha){var c=await apiGet(R+'/git/commits/'+baseSha);baseTree=c.json.tree.sha}
+    var entries=[];
+    for(var i=0;i<files.length;i++){var bl=await apiPost(R+'/git/blobs',{content:files[i].content,encoding:'utf8'});entries.push({path:files[i].path,mode:'100644',type:'blob',sha:bl.json.sha})}
+    var tb={tree:entries};if(baseTree)tb.base_tree=baseTree;
+    var tr=await apiPost(R+'/git/trees',tb);
+    var cm=await apiPost(R+'/git/commits',{message:msg,tree:tr.json.sha,parents:baseSha?[baseSha]:[]});
+    if(baseSha){await apiPatch(R+'/git/refs/heads/'+state.repo.branch,{sha:cm.json.sha})}else{await apiPost(R+'/git/refs',{ref:'refs/heads/'+state.repo.branch,sha:cm.json.sha})}
+    return cm.json;
+  }
+  var edClose=$('#ed-close'),edSave=$('#ed-save');
+  if(edClose)edClose.onclick=function(){$('#editor-overlay').classList.add('hidden')};
+  if(edSave)edSave.onclick=function(){
+    if(!edPath)return;
+    edSave.disabled=true;$('#ed-status').textContent='committing…';
+    commitEntries([{path:edPath,content:$('#ed-body').value}],'PushBridge: edit '+edPath).then(function(cm){
+      $('#ed-status').textContent='✓ committed '+cm.sha.slice(0,7);loadTree();
+    }).catch(function(e){$('#ed-status').textContent='✗ '+e.message}).finally(function(){edSave.disabled=false});
+  };
+  setInterval(function(){var v=$('#view-dash');if(v&&!v.classList.contains('hidden'))loadTree()},45000);
+
   /* ---- PUSHBRIDGE CORE ENGINE ---- */
   function apiReq(method,path,body){
     return fetch('https://api.github.com'+path,{method:method,headers:{Authorization:'Bearer '+state.pat,Accept:'application/vnd.github+json','Content-Type':'application/json'},body:body?JSON.stringify(body):undefined})
@@ -245,7 +323,7 @@ show('dash');
         localStorage.setItem('pb_history',JSON.stringify(h.slice(0,50)));
         log('✓ Pushed '+ops.length+' file(s) · commit '+cm.json.sha.slice(0,7)+' · '+cm.json.html_url);
       }catch(e){log('✗ '+(e.message||e))}
-      finally{sendBtn.disabled=false;chatLog.scrollTop=chatLog.scrollHeight}
+      finally{sendBtn.disabled=false;chatLog.scrollTop=chatLog.scrollHeight;loadTree()}
     })();
   }
   var sw=$('#dash-switch');
