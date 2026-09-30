@@ -146,6 +146,7 @@ show('dash');
     s.classList.add('active');
     var sub=document.querySelector('#view-dash .sub');
     if(sub)sub.textContent=s.textContent+' — this panel grows piece by piece.';
+    document.querySelectorAll('#dash-canvas [data-seg]').forEach(function(el){el.classList.toggle('hidden',el.dataset.seg!==s.dataset.seg)});
   })});
   var sw=$('#dash-switch');
 var bRepos=$('#back-repos'),bDash=$('#back-dash');
