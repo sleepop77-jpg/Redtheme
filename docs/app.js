@@ -148,6 +148,19 @@ show('dash');
     if(sub)sub.textContent=s.textContent+' — this panel grows piece by piece.';
     document.querySelectorAll('#dash-canvas [data-seg]').forEach(function(el){el.classList.toggle('hidden',el.dataset.seg!==s.dataset.seg)});
   })});
+  var sendBtn=$('#chat-send'),chatIn=$('#chat-input'),chatLog=$('#chat-log');
+  function sendChat(){
+    if(!chatIn||!sendBtn)return;
+    var t=chatIn.value.trim();
+    if(!t){chatIn.style.borderColor='var(--error)';setTimeout(function(){chatIn.style.borderColor=''},450);chatIn.focus();return}
+    chatLog.classList.remove('hidden');
+    var u=document.createElement('div');u.className='msg user';u.textContent=t;chatLog.appendChild(u);
+    var b=document.createElement('div');b.className='msg bot';b.textContent='Heard. The reply engine is the next brick — for now your words are safely on the board.';chatLog.appendChild(b);
+    chatLog.scrollTop=chatLog.scrollHeight;
+    chatIn.value='';chatIn.focus();
+  }
+  if(sendBtn)sendBtn.addEventListener('click',sendChat);
+  if(chatIn)chatIn.addEventListener('keydown',function(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendChat()}});
   var sw=$('#dash-switch');
 var bRepos=$('#back-repos'),bDash=$('#back-dash');
 if(bRepos)bRepos.addEventListener('click',function(){show('login')});
