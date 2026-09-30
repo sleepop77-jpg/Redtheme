@@ -81,6 +81,9 @@ label{display:block;font-size:12.5px;font-weight:700;letter-spacing:.08em;text-t
 /* --- REPO PICKER --- */
 .picker-view{position:fixed;inset:0;z-index:60;display:flex;align-items:center;justify-content:center;background:var(--sand) url("picker-bg.png") no-repeat bottom center / cover}
 .picker-view.hidden{display:none!important}
+.split,#view-repos,#view-dash{transition:opacity .65s cubic-bezier(.22,1,.36,1),transform .65s cubic-bezier(.22,1,.36,1)}
+.leaving{opacity:0;transform:scale(1.02);pointer-events:none}
+.entering{opacity:0;transform:scale(.985) translateY(16px);transition:none!important}
 .back-btn{position:absolute;top:26px;left:30px;z-index:5;display:flex;align-items:center;justify-content:center;border:none;background:none;padding:6px;cursor:pointer;color:var(--olive);opacity:.72;transition:transform .15s,opacity .15s}
 .back-btn svg{width:24px;height:24px}
 .back-btn:hover{opacity:1;transform:translateX(-3px)}

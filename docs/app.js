@@ -8,11 +8,31 @@ try{var a=JSON.parse(localStorage.getItem('pb_auth')||'null');if(a){state.pat=a.
 try{var r=JSON.parse(localStorage.getItem('pb_repo')||'null');if(r)state.repo=r}catch(e){}
 var split=document.querySelector('.split');
 var viewRepos=$('#view-repos'),viewDash=$('#view-dash');
-function show(which){
-if(split)split.style.display=(which==='login')?'':'none';
-if(viewRepos)viewRepos.classList.toggle('hidden',which!=='repos');
-if(viewDash)viewDash.classList.toggle('hidden',which!=='dash');
-}
+  var current=null,busy=false,pending=null;
+  var screens={login:split,repos:viewRepos,dash:viewDash};
+  function hideNow(el){if(el===split)el.style.display='none';else el.classList.add('hidden')}
+  function reveal(el){
+    if(el===split)el.style.display='';else el.classList.remove('hidden');
+    el.classList.add('entering');
+    void el.offsetWidth;
+    requestAnimationFrame(function(){el.classList.remove('entering')});
+  }
+  function show(which){
+    if(!screens[which])return;
+    if(busy){pending=which;return}
+    var next=screens[which],prev=current;current=which;
+    if(!prev||prev===which){reveal(next);return}
+    busy=true;
+    var prevEl=screens[prev];
+    prevEl.classList.add('leaving');
+    setTimeout(function(){
+      prevEl.classList.remove('leaving');
+      hideNow(prevEl);
+      reveal(next);
+      busy=false;
+      if(pending){var p=pending;pending=null;show(p)}
+    },430);
+  }
 function apiGet(path){
 return fetch('https://api.github.com'+path,{headers:{Authorization:'Bearer '+state.pat,Accept:'application/vnd.github+json'}})
 .then(function(res){
