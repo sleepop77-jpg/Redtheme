@@ -24,11 +24,12 @@ return res.json().then(function(json){return {json:json,headers:res.headers}});
 var form=$('#auth-form');
 if(form)form.addEventListener('submit',function(e){
 e.preventDefault();
-var pat=$('#pat-input').value.trim();if(!pat)return;
-var btn=$('#connect-btn'),st=$('#status-msg');
-btn.disabled=true;btn.textContent='Verifying…';st.classList.add('hidden');
-apiGet('/user').then(function(r){
-state.pat=pat;state.user=r.json;state.scopes=r.headers.get('x-oauth-scopes');
+    var pat=$('#pat-input').value.trim();if(!pat)return;
+    var btn=$('#connect-btn'),st=$('#status-msg');
+    btn.disabled=true;btn.textContent='Verifying…';st.classList.add('hidden');
+    state.pat=pat;
+    apiGet('/user').then(function(r){
+      state.user=r.json;state.scopes=r.headers.get('x-oauth-scopes');
 localStorage.setItem('pb_auth',JSON.stringify({pat:pat,user:r.json}));
 if(state.repo)enterDash();else show('repos');
 }).catch(function(err){
