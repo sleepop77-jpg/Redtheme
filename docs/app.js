@@ -171,6 +171,26 @@ enterDash();
   if(chatIn)chatIn.addEventListener('keydown',function(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendChat()}});
   /* ---- FILE TREE + IN-BROWSER EDITOR ---- */
   var openPaths={},edPath=null;
+  function svgIcon(kind,color){
+    var head='<svg viewBox="0 0 24 24" fill="none" stroke="'+color+'" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">';
+    if(kind==='image')return head+'<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>';
+    if(kind==='code')return head+'<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><polyline points="10 13 8 15 10 17"/><polyline points="14 13 16 15 14 17"/></svg>';
+    if(kind==='folder')return head+'<path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>';
+    return head+'<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>';
+  }
+  var ICON_CHEV='<svg viewBox="0 0 24 24" fill="none" stroke="#8a8562" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>';
+  function fileIcon(name){
+    var ext=(name.split('.').pop()||'').toLowerCase();
+    if(['png','jpg','jpeg','gif','svg','webp','ico','bmp'].indexOf(ext)>=0)return svgIcon('image','#7DA87A');
+    if(['js','jsx','mjs'].indexOf(ext)>=0)return svgIcon('code','#b7a24a');
+    if(['ts','tsx'].indexOf(ext)>=0)return svgIcon('code','#6b8caf');
+    if(ext==='html'||ext==='htm')return svgIcon('code','#c07a52');
+    if(ext==='css'||ext==='scss')return svgIcon('code','#7a9cc6');
+    if(ext==='py')return svgIcon('code','#6f9c74');
+    if(ext==='md'||ext==='txt')return svgIcon('doc','#8a8562');
+    if(ext==='json'||ext==='yml'||ext==='yaml')return svgIcon('doc','#a08c5b');
+    return svgIcon('doc','#a7a287');
+  }
   async function loadTree(){
     if(!state.repo)return;
     var R='/repos/'+state.repo.full_name;
@@ -197,13 +217,16 @@ enterDash();
     Object.keys(node.kids).sort(function(a,b){var ka=node.kids[a],kb=node.kids[b];if((ka.file?1:0)!==(kb.file?1:0))return (ka.file?1:0)-(kb.file?1:0);return a.localeCompare(b)}).forEach(function(name){
       var path=prefix?prefix+'/'+name:name,k=node.kids[name],depth=path.split('/').length-1;
       if(k.file){
-        var r=document.createElement('div');r.className='tb-row file';r.style.paddingLeft=(8+14*depth)+'px';r.textContent=name;
+        var r=document.createElement('div');r.className='tb-row file';r.style.paddingLeft=(12+16*depth)+'px';
+        r.innerHTML='<span class="car"></span><span class="fic">'+fileIcon(name)+'</span>';
+        r.appendChild(document.createTextNode(name));
         r.onclick=function(){openEditor(path)};
         wrap.appendChild(r);
       }else{
         var box=document.createElement('div');box.className='tb-node'+(openPaths[path]?' tb-open':'');
-        var d=document.createElement('div');d.className='tb-row dir';d.style.paddingLeft=(8+14*depth)+'px';
-        d.innerHTML='<span class="car">▸</span>';d.appendChild(document.createTextNode(name));
+        var d=document.createElement('div');d.className='tb-row dir';d.style.paddingLeft=(12+16*depth)+'px';
+        d.innerHTML='<span class="car">'+ICON_CHEV+'</span><span class="fic">'+svgIcon('folder','#a7a287')+'</span>';
+        d.appendChild(document.createTextNode(name));
         d.onclick=function(){openPaths[path]=!openPaths[path];box.classList.toggle('tb-open')};
         var kids=document.createElement('div');kids.className='tb-kids';kids.appendChild(buildLevel(k,path));
         box.appendChild(d);box.appendChild(kids);wrap.appendChild(box);
