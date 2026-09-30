@@ -88,6 +88,12 @@ label{display:block;font-size:12.5px;font-weight:700;letter-spacing:.08em;text-t
 .back-btn svg{width:24px;height:24px}
 .back-btn:hover{opacity:1;transform:translateX(-3px)}
 .back-btn:focus-visible{outline:2px solid var(--olive-mid);outline-offset:3px;border-radius:6px}
+.dash-topbar{position:absolute;top:26px;left:0;right:0;display:flex;justify-content:center;z-index:2;pointer-events:none}
+.seg{pointer-events:auto;display:inline-flex;align-items:stretch;background:var(--white);border:1.5px solid var(--khaki);border-radius:100px;overflow:hidden;box-shadow:var(--shadow-sm)}
+.seg-btn{border:none;background:none;padding:10px 24px;font:600 13px var(--font-sans);color:var(--olive-mid);cursor:pointer;transition:background .15s,color .15s}
+.seg-btn+.seg-btn{border-left:1.5px solid var(--khaki)}
+.seg-btn:hover{background:rgba(167,162,135,.14)}
+.seg-btn.active{background:var(--olive-mid);color:var(--white)}
 .picker-trigger{display:flex;flex-direction:column;align-items:center;gap:14px;border:none;background:none;cursor:pointer;color:var(--olive-mid);font:600 15px var(--font-sans)}
 .picker-trigger .ring{width:88px;height:88px;border-radius:50%;background:var(--white);border:2px solid rgba(62,74,54,.45);box-shadow:0 10px 30px rgba(62,74,54,.18);display:flex;align-items:center;justify-content:center;font-size:34px;font-weight:700;color:var(--olive-mid);transition:transform .15s}
 .picker-trigger:hover .ring{transform:scale(1.07)}

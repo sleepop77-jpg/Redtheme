@@ -140,7 +140,14 @@ if(t)t.textContent=state.repo?state.repo.full_name:'—';
 if(p){p.className='status success';p.textContent='✓ push verified · branch '+(state.repo?state.repo.branch:'—')}
 show('dash');
 }
-var sw=$('#dash-switch');
+  var segs=document.querySelectorAll('.seg-btn');
+  segs.forEach(function(s){s.addEventListener('click',function(){
+    segs.forEach(function(o){o.classList.remove('active')});
+    s.classList.add('active');
+    var sub=document.querySelector('#view-dash .sub');
+    if(sub)sub.textContent=s.textContent+' — this panel grows piece by piece.';
+  })});
+  var sw=$('#dash-switch');
 var bRepos=$('#back-repos'),bDash=$('#back-dash');
 if(bRepos)bRepos.addEventListener('click',function(){show('login')});
 if(bDash)bDash.addEventListener('click',function(){show('repos')});
