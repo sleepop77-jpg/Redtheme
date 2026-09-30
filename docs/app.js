@@ -153,6 +153,7 @@ show('dash');
     if(!chatIn||!sendBtn)return;
     var t=chatIn.value.trim();
     if(!t){chatIn.style.borderColor='var(--error)';setTimeout(function(){chatIn.style.borderColor=''},450);chatIn.focus();return}
+    if(/===\s*(PUSHBRIDGE|VIBEBRIDGE)\s*===/i.test(t)){chatIn.value='';armSend();pushPipeline(t);return}
     chatLog.classList.remove('hidden');
     var u=document.createElement('div');u.className='msg user';u.textContent=t;chatLog.appendChild(u);
     var b=document.createElement('div');b.className='msg bot';b.textContent='Heard. The reply engine is the next brick — for now your words are safely on the board.';chatLog.appendChild(b);
@@ -164,6 +165,87 @@ show('dash');
   if(chatIn)chatIn.addEventListener('input',armSend);
   armSend();
   if(chatIn)chatIn.addEventListener('keydown',function(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendChat()}});
+  /* ---- PUSHBRIDGE CORE ENGINE ---- */
+  function apiReq(method,path,body){
+    return fetch('https://api.github.com'+path,{method:method,headers:{Authorization:'Bearer '+state.pat,Accept:'application/vnd.github+json','Content-Type':'application/json'},body:body?JSON.stringify(body):undefined})
+      .then(function(res){if(!res.ok){var e=new Error('HTTP '+res.status);e.code=res.status;throw e}return res.json().then(function(j){return{json:j}})});
+  }
+  function apiPost(path,body){return apiReq('POST',path,body)}
+  function apiPatch(path,body){return apiReq('PATCH',path,body)}
+  function b64utf8(b64){return decodeURIComponent(escape(atob(b64.replace(/\n/g,''))))}
+  function histPush(){try{return JSON.parse(localStorage.getItem('pb_history')||'[]')}catch(e){return[]}}
+  function parsePayload(text){
+    var lines=text.split('\n'),ops=[],cur=null,mode=null,hunk=null;
+    for(var i=0;i<lines.length;i++){
+      var m=lines[i].match(/^=====\s*(FILE|EDIT|DELETE):\s*(.+?)\s*=====$/);
+      if(m){if(cur)ops.push(cur);cur={type:m[1],path:m[2],content:'',hunks:[]};mode=(m[1]==='EDIT'?'await':'content');continue}
+      if(!cur)continue;
+      if(cur.type==='EDIT'){
+        if(/^---\s*FIND\s*$/.test(lines[i])){hunk={find:'',replace:''};mode='find';continue}
+        if(/^---\s*REPLACE\s*$/.test(lines[i])){mode='replace';continue}
+        if(/^---\s*END\s*$/.test(lines[i])){if(hunk)cur.hunks.push(hunk);hunk=null;mode='await';continue}
+        if(hunk){if(mode==='find')hunk.find+=lines[i]+'\n';else if(mode==='replace')hunk.replace+=lines[i]+'\n'}
+        continue;
+      }
+      cur.content+=lines[i]+'\n';
+    }
+    if(cur)ops.push(cur);
+    ops.forEach(function(o){
+      o.content=o.content.replace(/\n$/,'');
+      o.hunks.forEach(function(h){h.find=h.find.replace(/\n$/,'');h.replace=h.replace.replace(/\n$/,'')});
+    });
+    if(!ops.length)throw new Error('no FILE/EDIT/DELETE ops found in payload');
+    return ops;
+  }
+  function applyHunks(content,hunks){
+    for(var i=0;i<hunks.length;i++){
+      var idx=content.indexOf(hunks[i].find);
+      if(idx<0)throw new Error('FIND block not found (hunk '+(i+1)+')');
+      content=content.slice(0,idx)+hunks[i].replace+content.slice(idx+hunks[i].find.length);
+    }
+    return content;
+  }
+  function pushPipeline(text){
+    chatLog.classList.remove('hidden');
+    var b=document.createElement('div');b.className='msg bot';b.textContent='PushBridge: parsing…';chatLog.appendChild(b);
+    var log=function(s){b.textContent=s;chatLog.scrollTop=chatLog.scrollHeight};
+    sendBtn.disabled=true;
+    var ops;
+    try{ops=parsePayload(text)}catch(e){log('✗ '+e.message);sendBtn.disabled=false;return}
+    log('PushBridge: '+ops.length+' op(s) → '+state.repo.full_name+' @ '+state.repo.branch);
+    var R='/repos/'+state.repo.full_name;
+    (async function(){
+      try{
+        var baseSha=null;
+        try{var ref=await apiReq('GET',R+'/git/refs/heads/'+state.repo.branch);baseSha=ref.json.object.sha}catch(e){}
+        log('Base: '+(baseSha?baseSha.slice(0,7):'no branch yet — will create orphan'));
+        var baseTree=null;
+        if(baseSha){var c=await apiReq('GET',R+'/git/commits/'+baseSha);baseTree=c.json.tree.sha}
+        var entries=[];
+        for(var i=0;i<ops.length;i++){
+          var op=ops[i];
+          log((i+1)+'/'+ops.length+' · '+op.type+' '+op.path);
+          if(op.type==='DELETE'){entries.push({path:op.path,mode:'100644',type:'blob',sha:null});continue}
+          var content=op.content;
+          if(op.type==='EDIT'){
+            var cur=await apiReq('GET',R+'/contents/'+op.path+'?ref='+state.repo.branch);
+            content=applyHunks(b64utf8(cur.json.content),op.hunks);
+          }
+          var bl=await apiPost(R+'/git/blobs',{content:content,encoding:'utf8'});
+          entries.push({path:op.path,mode:'100644',type:'blob',sha:bl.json.sha});
+        }
+        var treeBody={tree:entries};if(baseTree)treeBody.base_tree=baseTree;
+        var tr=await apiPost(R+'/git/trees',treeBody);
+        var cm=await apiPost(R+'/git/commits',{message:'PushBridge: '+ops.length+' file update(s)',tree:tr.json.sha,parents:baseSha?[baseSha]:[]});
+        if(baseSha){await apiPatch(R+'/git/refs/heads/'+state.repo.branch,{sha:cm.json.sha})}
+        else{await apiPost(R+'/git/refs',{ref:'refs/heads/'+state.repo.branch,sha:cm.json.sha})}
+        var h=histPush();h.unshift({repo:state.repo.full_name,at:Date.now(),files:ops.length,ok:true,commit:cm.json.sha});
+        localStorage.setItem('pb_history',JSON.stringify(h.slice(0,50)));
+        log('✓ Pushed '+ops.length+' file(s) · commit '+cm.json.sha.slice(0,7)+' · '+cm.json.html_url);
+      }catch(e){log('✗ '+(e.message||e))}
+      finally{sendBtn.disabled=false;chatLog.scrollTop=chatLog.scrollHeight}
+    })();
+  }
   var sw=$('#dash-switch');
 var bRepos=$('#back-repos'),bDash=$('#back-dash');
 if(bRepos)bRepos.addEventListener('click',function(){show('login')});
