@@ -90,7 +90,7 @@ label{display:block;font-size:12.5px;font-weight:700;letter-spacing:.08em;text-t
 .back-btn:focus-visible{outline:2px solid var(--olive-mid);outline-offset:3px;border-radius:6px}
 .dash-canvas{position:absolute;inset:0;padding:96px 40px 0 270px;overflow:auto;display:flex;flex-direction:column;align-items:center;gap:0}
 .taskbar{position:absolute;left:0;top:0;bottom:0;width:250px;z-index:4;background:rgba(167,162,135,.18);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);border-right:1px solid rgba(167,162,135,.38);display:flex;flex-direction:column}
-.tb-name{padding:64px 16px 10px 26px;font:700 12px var(--font-mono);color:var(--charcoal);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;border-bottom:1px solid rgba(167,162,135,.5)}
+.tb-name{padding:64px 12px 10px;text-align:center;font:700 12px var(--font-mono);color:var(--charcoal);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;border-bottom:1px solid rgba(167,162,135,.5)}
 .tb-tree{flex:1;overflow:auto;padding:10px 10px 10px 14px;font:12px/1.5 var(--font-mono);color:var(--charcoal);scrollbar-width:thin}
 .tb-row{display:flex;align-items:center;gap:6px;padding:4px 8px;border-radius:6px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .tb-row:hover{background:rgba(252,251,249,.5)}
