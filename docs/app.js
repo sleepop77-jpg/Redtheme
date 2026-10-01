@@ -253,7 +253,9 @@ enterDash();
       $('#ed-status').textContent='ready — edits commit straight to '+state.repo.branch;
     }).catch(function(e){$('#ed-status').textContent='✗ '+e.message});
   }
+  var contentCache={};
   async function commitEntries(files,msg){
+    contentCache={};
     var R='/repos/'+state.repo.full_name,baseSha=null;
     try{var ref=await apiGet(R+'/git/refs/heads/'+state.repo.branch);baseSha=ref.json.object.sha}catch(e){}
     var baseTree=null;
@@ -328,10 +330,104 @@ enterDash();
   };
 
   /* ---- RIGHT DOCK ---- */
-  var dEx=$('#dock-explorer'),dXl=$('#dock-excel'),dCh=$('#dock-chat');
-  if(dEx)dEx.onclick=function(){var tb=$('#taskbar');if(!tb)return;var hid=tb.classList.toggle('tb-hide');dEx.classList.toggle('on',!hid)};
+  var dXl=$('#dock-excel'),dCh=$('#dock-chat'),dSe=$('#dock-search');
   if(dCh)dCh.onclick=function(){if(chatIn)chatIn.focus()};
-  if(dXl)dXl.onclick=function(){dockChat();var b=document.createElement('div');b.className='msg bot';b.textContent='Excel window is the next brick — the dock is holding its seat.';chatLog.appendChild(b);chatLog.scrollTop=chatLog.scrollHeight};
+
+  /* ---- REPO SEARCH ---- */
+  var SEARCH_EXT=/\.(js|jsx|ts|tsx|html|css|md|json|py|txt|yml|yaml|sh|csv|java|c|cpp|h|rb|go|rs|php|sql|toml|ini|cfg)$/i;
+  function esc(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
+  function getFileContent(path){
+    if(contentCache[path])return contentCache[path];
+    return apiGet('/repos/'+state.repo.full_name+'/contents/'+path+'?ref='+state.repo.branch).then(function(r){
+      contentCache[path]=b64utf8(r.json.content);return contentCache[path];
+    });
+  }
+  function closeSearch(){var m=$('#search-modal');if(m)m.classList.add('hidden')}
+  function runSearch(q){
+    var host=$('#search-results'),st=$('#search-status');if(!host)return;
+    host.innerHTML='';
+    if(!q){st.textContent='';return}
+    var files=(lastTree||[]).filter(function(e){return e.type==='blob'&&e.size<=100000&&SEARCH_EXT.test(e.path)});
+    st.textContent='searching 0/'+files.length;
+    var ql=q.toLowerCase(),eq=esc(q).replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),rx=new RegExp(eq,'gi');
+    (async function(){
+      var total=0;
+      for(var i=0;i<files.length;i++){
+        st.textContent='searching '+(i+1)+'/'+files.length+' · '+files[i].path;
+        var content;
+        try{content=await getFileContent(files[i].path)}catch(e){continue}
+        var lines=content.split('\n'),hits=[];
+        for(var L=0;L<lines.length;L++){if(lines[L].toLowerCase().indexOf(ql)>=0)hits.push({n:L+1,t:lines[L]})}
+        if(!hits.length)continue;
+        total+=hits.length;
+        var fh=document.createElement('div');fh.className='sr-file';
+        fh.innerHTML='<span class="fic">'+fileIcon(files[i].path)+'</span><span></span><span class="cnt">'+hits.length+'</span>';
+        fh.querySelector('span:nth-child(2)').textContent=files[i].path;
+        host.appendChild(fh);
+        hits.slice(0,40).forEach(function(h){
+          var row=document.createElement('div');row.className='sr-line';
+          var snip=h.t.trim();if(snip.length>140)snip=snip.slice(0,140)+'…';
+          row.innerHTML='<span class="ln">'+h.n+'</span><span>'+esc(snip).replace(rx,'<mark>$&</mark>')+'</span>';
+          row.onclick=function(){closeSearch();openEditor(files[i].path)};
+          host.appendChild(row);
+        });
+      }
+      st.textContent=total?total+' match(es) in '+host.querySelectorAll('.sr-file').length+' file(s)':'no matches for "'+q+'"';
+    })();
+  }
+  if(dSe)dSe.onclick=function(){var m=$('#search-modal');if(m){m.classList.remove('hidden');var si=$('#search-input');if(si)si.focus()}};
+  var seClose=$('#search-close');if(seClose)seClose.onclick=closeSearch;
+  var seModal=$('#search-modal');if(seModal)seModal.addEventListener('click',function(e){if(e.target===seModal)closeSearch()});
+  var seIn=$('#search-input'),seTimer=null;
+  if(seIn)seIn.addEventListener('input',function(){clearTimeout(seTimer);seTimer=setTimeout(function(){runSearch(seIn.value.trim())},350)});
+
+  /* ---- EXCEL WINDOW ---- */
+  var xlBuilt=false;
+  function buildXl(){
+    if(xlBuilt)return;xlBuilt=true;
+    var tbl=$('#xl-grid');if(!tbl)return;
+    var cols='ABCDEFGHIJ'.split('');
+    var html='<thead><tr><th class="corner"></th>';
+    cols.forEach(function(c){html+='<th class="col">'+c+'</th>'});
+    html+='</tr></thead><tbody>';
+    for(var r=1;r<=50;r++){
+      html+='<tr><th class="row">'+r+'</th>';
+      cols.forEach(function(){html+='<td contenteditable="plaintext-only"></td>'});
+      html+='</tr>';
+    }
+    tbl.innerHTML=html+'</tbody>';
+    tbl.addEventListener('keydown',function(e){
+      var td=e.target.closest?e.target.closest('td'):null;if(!td)return;
+      var dr=0,dc=0;
+      if(e.key==='ArrowUp')dr=-1;else if(e.key==='ArrowDown'||e.key==='Enter')dr=1;else if(e.key==='ArrowLeft')dc=-1;else if(e.key==='ArrowRight')dc=1;else return;
+      e.preventDefault();
+      var row=tbl.rows[td.parentElement.rowIndex+dr];if(!row)return;
+      var nt=row.cells[td.cellIndex+dc];if(nt&&nt.tagName==='TD')nt.focus();
+    });
+  }
+  function xlCSV(){
+    var tbl=$('#xl-grid'),out=[];
+    for(var i=1;i<tbl.rows.length;i++){
+      var cells=tbl.rows[i].cells,line=[];
+      for(var j=1;j<cells.length;j++){var v=(cells[j].textContent||'').replace(/\r?\n/g,' ');line.push(/[",]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v)}
+      if(line.some(function(x){return x!==''}))out.push(line.join(','));
+    }
+    return out.join('\n');
+  }
+  if(dXl)dXl.onclick=function(){buildXl();var o=$('#xl-overlay');if(o)o.classList.remove('hidden')};
+  var xlClose=$('#xl-close');if(xlClose)xlClose.onclick=function(){var o=$('#xl-overlay');if(o)o.classList.add('hidden')};
+  var xlSave=$('#xl-save');
+  if(xlSave)xlSave.onclick=function(){
+    var name=($('#xl-name').value||'').trim()||'sheet1.csv';
+    if(!/\.csv$/i.test(name))name+='.csv';
+    xlSave.disabled=true;$('#xl-status').textContent='committing…';
+    commitEntries([{path:name,content:xlCSV()}],'PushBridge: excel '+name).then(function(cm){
+      $('#xl-status').textContent='✓ committed '+cm.sha.slice(0,7)+' → /'+name;
+      dockChat();
+      var b=document.createElement('div');b.className='msg bot';b.textContent='✓ spreadsheet pushed → /'+name+' · commit '+cm.sha.slice(0,7);chatLog.appendChild(b);chatLog.scrollTop=chatLog.scrollHeight;
+      loadTree();
+    }).catch(function(e){$('#xl-status').textContent='✗ '+e.message}).finally(function(){xlSave.disabled=false});
+  };
 
   /* ---- PUSHBRIDGE CORE ENGINE ---- */
   function apiReq(method,path,body){
