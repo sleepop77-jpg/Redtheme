@@ -170,7 +170,7 @@ enterDash();
   armSend();
   if(chatIn)chatIn.addEventListener('keydown',function(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendChat()}});
   /* ---- FILE TREE + IN-BROWSER EDITOR ---- */
-  var openPaths={},edPath=null;
+  var openPaths={},edPath=null,lastTree=[],imgFile=null,imgDest='';
   function svgIcon(kind,color){
     var head='<svg viewBox="0 0 24 24" fill="none" stroke="'+color+'" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">';
     if(kind==='image')return head+'<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>';
@@ -198,7 +198,7 @@ enterDash();
       var ref=await apiGet(R+'/git/refs/heads/'+state.repo.branch);
       var cm=await apiGet(R+'/git/commits/'+ref.json.object.sha);
       var tr=await apiGet(R+'/git/trees/'+cm.json.tree.sha+'?recursive=1');
-      renderTree(tr.json.tree);
+      lastTree=tr.json.tree;renderTree(tr.json.tree);
     }catch(e){}
   }
   function renderTree(entries){
@@ -250,7 +250,7 @@ enterDash();
     var baseTree=null;
     if(baseSha){var c=await apiGet(R+'/git/commits/'+baseSha);baseTree=c.json.tree.sha}
     var entries=[];
-    for(var i=0;i<files.length;i++){var bl=await apiPost(R+'/git/blobs',{content:files[i].content,encoding:'utf8'});entries.push({path:files[i].path,mode:'100644',type:'blob',sha:bl.json.sha})}
+    for(var i=0;i<files.length;i++){var bl=await apiPost(R+'/git/blobs',{content:files[i].content,encoding:files[i].encoding||'utf8'});entries.push({path:files[i].path,mode:'100644',type:'blob',sha:bl.json.sha})}
     var tb={tree:entries};if(baseTree)tb.base_tree=baseTree;
     var tr=await apiPost(R+'/git/trees',tb);
     var cm=await apiPost(R+'/git/commits',{message:msg,tree:tr.json.sha,parents:baseSha?[baseSha]:[]});
@@ -267,6 +267,56 @@ enterDash();
     }).catch(function(e){$('#ed-status').textContent='✗ '+e.message}).finally(function(){edSave.disabled=false});
   };
   setInterval(function(){var v=$('#view-dash');if(v&&!v.classList.contains('hidden'))loadTree()},45000);
+
+  /* ---- IMAGE SYSTEM ---- */
+  function closeImg(){var m=$('#img-modal');if(m)m.classList.add('hidden')}
+  function renderDestTree(){
+    var host=$('#img-tree');if(!host)return;host.innerHTML='';
+    var root=document.createElement('div');root.className='tb-row dir'+(imgDest===''?' dest-on':'');root.style.paddingLeft='8px';
+    root.innerHTML='<span class="car"></span><span class="fic">'+svgIcon('folder','#a7a287')+'</span>';root.appendChild(document.createTextNode('repo root /'));
+    root.onclick=function(){imgDest='';renderDestTree()};
+    host.appendChild(root);
+    (lastTree||[]).filter(function(e){return e.type==='tree'}).sort(function(a,b){return a.path.localeCompare(b.path)}).forEach(function(e){
+      var depth=e.path.split('/').length;
+      var r=document.createElement('div');r.className='tb-row dir'+(imgDest===e.path?' dest-on':'');r.style.paddingLeft=(8+16*depth)+'px';
+      r.innerHTML='<span class="car"></span><span class="fic">'+svgIcon('folder','#a7a287')+'</span>';r.appendChild(document.createTextNode(e.path.split('/').pop()));
+      r.onclick=function(){imgDest=e.path;renderDestTree()};
+      host.appendChild(r);
+    });
+    var p=$('#img-path');if(p)p.textContent='→ /'+imgDest;
+  }
+  var imgPlus=$('#img-plus'),imgInput=$('#img-file');
+  if(imgPlus)imgPlus.onclick=function(){if(imgInput)imgInput.click()};
+  if(imgInput)imgInput.onchange=function(){
+    var f=imgInput.files&&imgInput.files[0];if(!f)return;
+    imgFile=f;
+    var rn=$('#img-rename');if(rn)rn.value=f.name;
+    var pv=$('#img-preview');if(pv){pv.innerHTML='';var im=document.createElement('img');im.src=URL.createObjectURL(f);var sp=document.createElement('span');sp.className='fn';sp.textContent=f.name+' · '+(f.size/1024).toFixed(1)+' KB';pv.appendChild(im);pv.appendChild(sp)}
+    var m=$('#img-modal');if(m)m.classList.remove('hidden');
+    renderDestTree();
+  };
+  var imgClose=$('#img-close');if(imgClose)imgClose.onclick=closeImg;
+  var imgModal=$('#img-modal');
+  if(imgModal)imgModal.addEventListener('click',function(e){if(e.target===imgModal)closeImg()});
+  var imgSend=$('#img-send');
+  if(imgSend)imgSend.onclick=function(){
+    if(!imgFile)return;
+    var name=($('#img-rename').value||'').trim()||imgFile.name;
+    var path=(imgDest?imgDest+'/':'')+name;
+    imgSend.disabled=true;imgSend.textContent='Pushing…';
+    var fr=new FileReader();
+    fr.onload=function(){
+      var b64=fr.result.split(',')[1]||'';
+      commitEntries([{path:path,content:b64,encoding:'base64'}],'PushBridge: add image '+path).then(function(cm){
+        closeImg();dockChat();
+        var b=document.createElement('div');b.className='msg bot';b.textContent='✓ image pushed → /'+path+' · commit '+cm.sha.slice(0,7);chatLog.appendChild(b);chatLog.scrollTop=chatLog.scrollHeight;
+        loadTree();
+      }).catch(function(e){
+        var b=document.createElement('div');b.className='msg bot';b.textContent='✗ '+(e.message||e);chatLog.appendChild(b);chatLog.scrollTop=chatLog.scrollHeight;
+      }).finally(function(){imgSend.disabled=false;imgSend.textContent='Send!';imgInput.value='';imgFile=null});
+    };
+    fr.readAsDataURL(imgFile);
+  };
 
   /* ---- PUSHBRIDGE CORE ENGINE ---- */
   function apiReq(method,path,body){
