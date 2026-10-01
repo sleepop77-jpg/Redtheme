@@ -327,6 +327,12 @@ enterDash();
     fr.readAsDataURL(imgFile);
   };
 
+  /* ---- RIGHT DOCK ---- */
+  var dEx=$('#dock-explorer'),dXl=$('#dock-excel'),dCh=$('#dock-chat');
+  if(dEx)dEx.onclick=function(){var tb=$('#taskbar');if(!tb)return;var hid=tb.classList.toggle('tb-hide');dEx.classList.toggle('on',!hid)};
+  if(dCh)dCh.onclick=function(){if(chatIn)chatIn.focus()};
+  if(dXl)dXl.onclick=function(){dockChat();var b=document.createElement('div');b.className='msg bot';b.textContent='Excel window is the next brick — the dock is holding its seat.';chatLog.appendChild(b);chatLog.scrollTop=chatLog.scrollHeight};
+
   /* ---- PUSHBRIDGE CORE ENGINE ---- */
   function apiReq(method,path,body){
     return fetch('https://api.github.com'+path,{method:method,headers:{Authorization:'Bearer '+state.pat,Accept:'application/vnd.github+json','Content-Type':'application/json'},body:body?JSON.stringify(body):undefined})
