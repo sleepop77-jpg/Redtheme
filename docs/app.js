@@ -152,11 +152,20 @@ enterDash();
   })});
   var sendBtn=$('#chat-send'),chatIn=$('#chat-input'),chatLog=$('#chat-log');
   function dockChat(){var c=document.getElementById('dash-canvas');if(c)c.classList.add('docked')}
+  function setIdleBrand(show){
+    var el=$('#idle-brand');if(!el)return;
+    if(show){el.classList.remove('hidden');void el.offsetWidth;el.classList.remove('gone')}
+    else if(!el.classList.contains('gone')){
+      el.classList.add('gone');
+      setTimeout(function(){if(el.classList.contains('gone'))el.classList.add('hidden')},400);
+    }
+  }
+  function updateIdle(){if(chatIn&&chatLog)setIdleBrand(!chatLog.children.length&&chatIn.value.trim()==='')}
   function sendChat(){
     if(!chatIn||!sendBtn)return;
     var t=chatIn.value.trim();
     if(!t){chatIn.style.borderColor='var(--error)';setTimeout(function(){chatIn.style.borderColor=''},450);chatIn.focus();return}
-    dockChat();
+    dockChat();setIdleBrand(false);
     if(/===\s*(PUSHBRIDGE|VIBEBRIDGE)\s*===/i.test(t)){chatIn.value='';armSend();pushPipeline(t);return}
     chatLog.classList.remove('hidden');
     var u=document.createElement('div');u.className='msg user';u.textContent=t;chatLog.appendChild(u);
@@ -166,7 +175,7 @@ enterDash();
   }
   if(sendBtn)sendBtn.addEventListener('click',sendChat);
   function armSend(){if(sendBtn&&chatIn)sendBtn.classList.toggle('armed',chatIn.value.trim().length>0)}
-  if(chatIn)chatIn.addEventListener('input',armSend);
+  if(chatIn)chatIn.addEventListener('input',function(){armSend();updateIdle()});
   armSend();
   if(chatIn)chatIn.addEventListener('keydown',function(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendChat()}});
   /* ---- FILE TREE + IN-BROWSER EDITOR ---- */
