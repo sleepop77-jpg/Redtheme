@@ -169,9 +169,8 @@ enterDash();
     if(/===\s*(PUSHBRIDGE|VIBEBRIDGE)\s*===/i.test(t)){chatIn.value='';armSend();pushPipeline(t);return}
     chatLog.classList.remove('hidden');
     var u=document.createElement('div');u.className='msg user';u.textContent=t;chatLog.appendChild(u);
-    var b=document.createElement('div');b.className='msg bot';b.textContent='Heard. The reply engine is the next brick — for now your words are safely on the board.';chatLog.appendChild(b);
-    chatLog.scrollTop=chatLog.scrollHeight;
-    chatIn.value='';chatIn.focus();
+    chatIn.value='';armSend();chatIn.focus();
+    askOpenAI(t);
   }
   if(sendBtn)sendBtn.addEventListener('click',sendChat);
   function armSend(){if(sendBtn&&chatIn)sendBtn.classList.toggle('armed',chatIn.value.trim().length>0)}
@@ -428,6 +427,51 @@ enterDash();
       loadTree();
     }).catch(function(e){$('#xl-status').textContent='✗ '+e.message}).finally(function(){xlSave.disabled=false});
   };
+
+  /* ---- OPENAI CHAT API ---- */
+  var conv=[];
+  function aiStore(){try{return JSON.parse(localStorage.getItem('pb_openai')||'null')}catch(e){return null}}
+  function aiSaveCfg(o){localStorage.setItem('pb_openai',JSON.stringify(o))}
+  function loadModels(){
+    var key=($('#api-key').value||'').trim()||(aiStore()||{}).key;
+    var sel=$('#api-model');if(!sel)return;
+    if(!key){sel.innerHTML='<option value="">add key first</option>';return}
+    sel.innerHTML='<option value="">loading models…</option>';
+    fetch('https://api.openai.com/v1/models',{headers:{Authorization:'Bearer '+key}}).then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.json()}).then(function(j){
+      var ids=(j.data||[]).map(function(m){return m.id});
+      ids.sort(function(a,b){function w(x){return x.indexOf('gpt-4o')===0?0:x.indexOf('gpt-4')===0?1:x.indexOf('gpt-3.5')===0?2:3}return w(a)-w(b)||a.localeCompare(b)});
+      sel.innerHTML='';
+      ids.forEach(function(id){var o=document.createElement('option');o.value=id;o.textContent=id;sel.appendChild(o)});
+      var want=(aiStore()||{}).model;
+      if(want&&ids.indexOf(want)>=0)sel.value=want;
+    }).catch(function(e){sel.innerHTML='<option value="">✗ '+e.message+'</option>'});
+  }
+  function askOpenAI(q){
+    var key=($('#api-key').value||'').trim();
+    if(!key){
+      var nb=document.createElement('div');nb.className='msg bot';nb.textContent='Add your OpenAI API key in the strip above the well — models load automatically, then I can think.';chatLog.appendChild(nb);chatLog.scrollTop=chatLog.scrollHeight;return;
+    }
+    var model=$('#api-model').value||'gpt-4o-mini';
+    aiSaveCfg({key:key,model:model});
+    var b=document.createElement('div');b.className='msg bot';b.textContent='thinking…';chatLog.appendChild(b);chatLog.scrollTop=chatLog.scrollHeight;
+    conv.push({role:'user',content:q});if(conv.length>8)conv=conv.slice(-8);
+    var sys='You are PushBridge chat, the in-browser engineer for the connected GitHub repository '+state.repo.full_name+' @ '+state.repo.branch+'. Be concise and concrete.';
+    if(lastTree&&lastTree.length){sys+='\nRepo files:\n'+lastTree.filter(function(e){return e.type==='blob'}).slice(0,200).map(function(e){return e.path}).join('\n')}
+    fetch('https://api.openai.com/v1/chat/completions',{method:'POST',headers:{Authorization:'Bearer '+key,'Content-Type':'application/json'},body:JSON.stringify({model:model,messages:[{role:'system',content:sys}].concat(conv),temperature:0.3})}).then(function(r){
+      if(!r.ok)return r.json().catch(function(){return{}}).then(function(j){throw new Error('HTTP '+r.status+(j&&j.error&&j.error.message?' · '+j.error.message:''))});
+      return r.json();
+    }).then(function(j){
+      var ans=j.choices&&j.choices[0]&&j.choices[0].message?j.choices[0].message.content:'(empty)';
+      conv.push({role:'assistant',content:ans});
+      b.textContent=ans;
+    }).catch(function(e){b.textContent='✗ '+e.message;conv.pop()}).finally(function(){chatLog.scrollTop=chatLog.scrollHeight});
+  }
+  var apiKeyIn=$('#api-key'),apiSel=$('#api-model'),apiRef=$('#api-refresh');
+  (function(){var cfg=aiStore();if(cfg&&apiKeyIn&&cfg.key)apiKeyIn.value=cfg.key;if(cfg&&apiSel&&cfg.model)apiSel.innerHTML='<option value="'+cfg.model+'">'+cfg.model+'</option>'})();
+  var keyTimer=null;
+  if(apiKeyIn)apiKeyIn.addEventListener('input',function(){clearTimeout(keyTimer);keyTimer=setTimeout(function(){aiSaveCfg({key:apiKeyIn.value.trim(),model:apiSel.value});loadModels()},700)});
+  if(apiRef)apiRef.onclick=loadModels;
+  if(apiSel)apiSel.addEventListener('change',function(){aiSaveCfg({key:apiKeyIn.value.trim(),model:apiSel.value})});
 
   /* ---- PUSHBRIDGE CORE ENGINE ---- */
   function apiReq(method,path,body){

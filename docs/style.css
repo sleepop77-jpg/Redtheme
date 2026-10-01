@@ -123,6 +123,12 @@ label{display:block;font-size:12.5px;font-weight:700;letter-spacing:.08em;text-t
 .idle-brand .wordmark{font:800 26px var(--font-sans);letter-spacing:-.02em;color:var(--charcoal)}
 
 .idle-brand.gone{opacity:0;transform:translateY(10px) scale(.97)}
+.api-row{display:flex;gap:8px;margin-bottom:10px}
+.api-key-in{flex:1;min-width:0;padding:8px 12px;border:1.5px solid var(--khaki);border-radius:10px;background:var(--white);font:12px var(--font-mono);color:var(--charcoal);outline:none}
+.api-key-in:focus{border-color:var(--olive-mid)}
+.api-model-sel{max-width:170px;padding:8px 10px;border:1.5px solid var(--khaki);border-radius:10px;background:var(--white);font:600 11.5px var(--font-sans);color:var(--charcoal);outline:none}
+.api-refresh{width:34px;height:34px;flex:none;border:1.5px solid var(--khaki);border-radius:10px;background:var(--white);color:var(--olive-mid);font-size:15px;cursor:pointer;transition:transform .3s}
+.api-refresh:hover{transform:rotate(90deg)}
 .chat-brick textarea{width:100%;min-height:132px;resize:vertical;background:var(--white);border:2px solid var(--khaki);border-radius:16px;padding:16px 56px 48px 48px;font:14px/1.6 var(--font-sans);color:var(--charcoal);outline:none;box-shadow:var(--shadow-sm);transition:border-color .2s,box-shadow .2s}
 .img-plus{position:absolute;left:12px;bottom:12px;width:32px;height:32px;border-radius:10px;border:none;background:transparent;color:var(--khaki);display:flex;align-items:center;justify-content:center;cursor:pointer;transition:background .2s,color .2s}
 .img-plus:hover{background:rgba(167,162,135,.18);color:var(--olive-mid)}

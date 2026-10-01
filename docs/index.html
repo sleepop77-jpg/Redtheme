@@ -94,6 +94,11 @@
         <div class="wordmark">PushBridge</div>
       </div>
       <div class="chat-log hidden" id="chat-log"></div>
+      <div class="api-row">
+        <input id="api-key" class="api-key-in" type="password" placeholder="OpenAI API key (sk-…)" autocomplete="off">
+        <select id="api-model" class="api-model-sel"></select>
+        <button id="api-refresh" class="api-refresh" type="button" title="Load available models">⟳</button>
+      </div>
       <textarea id="chat-input" spellcheck="false" placeholder="Ask anything about your project or paste AI response…"></textarea>
       <button id="img-plus" class="img-plus" type="button" title="Add image"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg></button>
       <input type="file" id="img-file" accept="image/*" style="display:none">
