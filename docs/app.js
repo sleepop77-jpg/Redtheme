@@ -207,7 +207,7 @@ enterDash();
       var ref=await apiGet(R+'/git/refs/heads/'+state.repo.branch);
       var cm=await apiGet(R+'/git/commits/'+ref.json.object.sha);
       var tr=await apiGet(R+'/git/trees/'+cm.json.tree.sha+'?recursive=1');
-      lastTree=tr.json.tree;renderTree(tr.json.tree);
+      lastTree=tr.json.tree;lastHeadSha=ref.json.object.sha;renderTree(tr.json.tree);maybeRebuildArtifacts();
     }catch(e){}
   }
   function renderTree(entries){
@@ -429,34 +429,53 @@ enterDash();
     }).catch(function(e){$('#xl-status').textContent='✗ '+e.message}).finally(function(){xlSave.disabled=false});
   };
 
-  /* ---- DOWNLOADS: ZIP + MD ---- */
+  /* ---- DOWNLOADS: ZIP + MD (cached, always warm) ---- */
+  var lastHeadSha='',artSha='',mdCache=null,zipCache=null,artBusy=false;
   function dlBubble(msg){dockChat();var b=document.createElement('div');b.className='msg bot';b.textContent=msg;chatLog.appendChild(b);chatLog.scrollTop=chatLog.scrollHeight;return b}
+  function saveBlob(blob,name){var a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(function(){URL.revokeObjectURL(a.href)},5000)}
+  async function buildMD(){
+    var files=(lastTree||[]).filter(function(e){return e.type==='blob'&&e.size<=100000&&SEARCH_EXT.test(e.path)});
+    var out='# '+state.repo.full_name+'\n\n> Exported by PushBridge · branch '+state.repo.branch+' · '+new Date().toISOString()+'\n\n';
+    for(var i=0;i<files.length;i++){
+      var c;try{c=await getFileContent(files[i].path)}catch(e){continue}
+      var ext=(files[i].path.split('.').pop()||'').toLowerCase();
+      out+='## '+files[i].path+'\n\n```'+ext+'\n'+c.split('```').join('`‌`‌`')+'\n```\n\n';
+    }
+    return out;
+  }
+  function zipURL(){return 'https://api.github.com/repos/'+state.repo.full_name+'/zipball/'+state.repo.branch}
+  function maybeRebuildArtifacts(){
+    if(!lastHeadSha||lastHeadSha===artSha||artBusy)return;
+    artBusy=true;var target=lastHeadSha;
+    (async function(){
+      try{mdCache=new Blob([await buildMD()],{type:'text/markdown'})}catch(e){}
+      try{var r=await fetch(zipURL(),{headers:{Authorization:'Bearer '+state.pat,Accept:'application/vnd.github+json'}});if(r.ok)zipCache=await r.blob()}catch(e){}
+      if(target===lastHeadSha)artSha=target;
+      artBusy=false;
+      if(lastHeadSha!==artSha)maybeRebuildArtifacts();
+    })();
+  }
   var dZip=$('#dock-zip');
   if(dZip)dZip.onclick=function(){
-    var b=dlBubble('zipping '+state.repo.full_name+' @ '+state.repo.branch+'…');
-    fetch('https://api.github.com/repos/'+state.repo.full_name+'/zipball/'+state.repo.branch,{headers:{Authorization:'Bearer '+state.pat,Accept:'application/vnd.github+json'}}).then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.blob()}).then(function(blob){
-      var a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=state.repo.name+'-'+state.repo.branch+'.zip';document.body.appendChild(a);a.click();a.remove();
-      setTimeout(function(){URL.revokeObjectURL(a.href)},5000);
+    var name=state.repo.name+'-'+state.repo.branch+'.zip';
+    if(zipCache&&artSha===lastHeadSha){saveBlob(zipCache,name);dlBubble('✓ zip served from cache · '+(zipCache.size/1024).toFixed(0)+' KB');return}
+    var b=dlBubble('zipping '+state.repo.full_name+'…');
+    fetch(zipURL(),{headers:{Authorization:'Bearer '+state.pat,Accept:'application/vnd.github+json'}}).then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.blob()}).then(function(blob){
+      zipCache=blob;if(lastHeadSha)artSha=lastHeadSha;
+      saveBlob(blob,name);
       b.textContent='✓ zip downloaded · '+(blob.size/1024).toFixed(0)+' KB';
     }).catch(function(e){b.textContent='✗ '+e.message});
   };
   var dMd=$('#dock-md');
   if(dMd)dMd.onclick=function(){
+    var name=state.repo.name+'-pushbridge.md';
+    if(mdCache&&artSha===lastHeadSha){saveBlob(mdCache,name);dlBubble('✓ markdown served from cache · '+(mdCache.size/1024).toFixed(0)+' KB');return}
     var b=dlBubble('building markdown export…');
-    var files=(lastTree||[]).filter(function(e){return e.type==='blob'&&e.size<=100000&&SEARCH_EXT.test(e.path)});
-    (async function(){
-      var out='# '+state.repo.full_name+'\n\n> Exported by PushBridge · branch '+state.repo.branch+' · '+new Date().toISOString()+'\n\n';
-      for(var i=0;i<files.length;i++){
-        b.textContent='building md '+(i+1)+'/'+files.length+' · '+files[i].path;
-        var c;try{c=await getFileContent(files[i].path)}catch(e){continue}
-        var ext=(files[i].path.split('.').pop()||'').toLowerCase();
-        out+='## '+files[i].path+'\n\n```'+ext+'\n'+c.split('```').join('`‌`‌`')+'\n```\n\n';
-      }
-      var blob=new Blob([out],{type:'text/markdown'});
-      var a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=state.repo.name+'-pushbridge.md';document.body.appendChild(a);a.click();a.remove();
-      setTimeout(function(){URL.revokeObjectURL(a.href)},5000);
-      b.textContent='✓ markdown exported · '+files.length+' files · '+(blob.size/1024).toFixed(0)+' KB';
-    })();
+    buildMD().then(function(out){
+      var blob=new Blob([out],{type:'text/markdown'});mdCache=blob;if(lastHeadSha)artSha=lastHeadSha;
+      saveBlob(blob,name);
+      b.textContent='✓ markdown exported · '+(blob.size/1024).toFixed(0)+' KB';
+    }).catch(function(e){b.textContent='✗ '+e.message});
   };
 
 
