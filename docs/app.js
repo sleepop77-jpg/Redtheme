@@ -443,13 +443,47 @@ enterDash();
     }
     return out;
   }
-  function zipURL(){return 'https://api.github.com/repos/'+state.repo.full_name+'/zipball/'+state.repo.branch}
+  var CRC_T=(function(){var t=new Uint32Array(256);for(var n=0;n<256;n++){var c=n;for(var k=0;k<8;k++)c=c&1?0xEDB88320^(c>>>1):c>>>1;t[n]=c}return t})();
+  function crc32(b){var c=0xFFFFFFFF;for(var i=0;i<b.length;i++)c=CRC_T[(c^b[i])&0xFF]^(c>>>8);return (c^0xFFFFFFFF)>>>0}
+  function b64bytes(b64){var s=atob(b64.replace(/\n/g,''));var u=new Uint8Array(s.length);for(var i=0;i<s.length;i++)u[i]=s.charCodeAt(i);return u}
+  function zipBlob(list){
+    var enc=new TextEncoder(),chunks=[],central=[],offset=0;
+    list.forEach(function(e){
+      var nameB=enc.encode(e.name),crc=crc32(e.bytes);
+      var lh=new Uint8Array(30+nameB.length),dv=new DataView(lh.buffer);
+      dv.setUint32(0,0x04034b50,true);dv.setUint16(4,20,true);dv.setUint16(6,0x0800,true);dv.setUint16(8,0,true);dv.setUint16(10,0,true);dv.setUint16(12,0x5421,true);
+      dv.setUint32(14,crc,true);dv.setUint32(18,e.bytes.length,true);dv.setUint32(22,e.bytes.length,true);dv.setUint16(26,nameB.length,true);dv.setUint16(28,0,true);
+      lh.set(nameB,30);chunks.push(lh,e.bytes);
+      central.push({nameB:nameB,crc:crc,size:e.bytes.length,offset:offset});
+      offset+=lh.length+e.bytes.length;
+    });
+    var cdStart=offset;
+    central.forEach(function(c){
+      var ch=new Uint8Array(46+c.nameB.length),dv=new DataView(ch.buffer);
+      dv.setUint32(0,0x02014b50,true);dv.setUint16(4,20,true);dv.setUint16(6,20,true);dv.setUint16(8,0x0800,true);dv.setUint16(10,0,true);dv.setUint16(12,0,true);dv.setUint16(14,0x5421,true);
+      dv.setUint32(16,c.crc,true);dv.setUint32(20,c.size,true);dv.setUint32(24,c.size,true);dv.setUint16(28,c.nameB.length,true);dv.setUint32(42,c.offset,true);
+      ch.set(c.nameB,46);chunks.push(ch);offset+=ch.length;
+    });
+    var eocd=new Uint8Array(22),dv2=new DataView(eocd.buffer);
+    dv2.setUint32(0,0x06054b50,true);dv2.setUint16(8,central.length,true);dv2.setUint16(10,central.length,true);dv2.setUint32(12,offset-cdStart,true);dv2.setUint32(16,cdStart,true);
+    chunks.push(eocd);
+    return new Blob(chunks,{type:'application/zip'});
+  }
+  async function buildZIP(prog){
+    var files=(lastTree||[]).filter(function(e){return e.type==='blob'&&e.size<=1000000}).slice(0,300);
+    var list=[];
+    for(var i=0;i<files.length;i++){
+      if(prog)prog(i+1,files.length,files[i].path);
+      try{var r=await apiGet('/repos/'+state.repo.full_name+'/contents/'+files[i].path+'?ref='+state.repo.branch);list.push({name:files[i].path,bytes:b64bytes(r.json.content)})}catch(e){}
+    }
+    return zipBlob(list);
+  }
   function maybeRebuildArtifacts(){
     if(!lastHeadSha||lastHeadSha===artSha||artBusy)return;
     artBusy=true;var target=lastHeadSha;
     (async function(){
       try{mdCache=new Blob([await buildMD()],{type:'text/markdown'})}catch(e){}
-      try{var r=await fetch(zipURL(),{headers:{Authorization:'Bearer '+state.pat,Accept:'application/vnd.github+json'}});if(r.ok)zipCache=await r.blob()}catch(e){}
+      try{zipCache=await buildZIP()}catch(e){}
       if(target===lastHeadSha)artSha=target;
       artBusy=false;
       if(lastHeadSha!==artSha)maybeRebuildArtifacts();
@@ -460,7 +494,7 @@ enterDash();
     var name=state.repo.name+'-'+state.repo.branch+'.zip';
     if(zipCache&&artSha===lastHeadSha){saveBlob(zipCache,name);dlBubble('✓ zip served from cache · '+(zipCache.size/1024).toFixed(0)+' KB');return}
     var b=dlBubble('zipping '+state.repo.full_name+'…');
-    fetch(zipURL(),{headers:{Authorization:'Bearer '+state.pat,Accept:'application/vnd.github+json'}}).then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.blob()}).then(function(blob){
+    buildZIP(function(i,n,p){b.textContent='zipping '+i+'/'+n+' · '+p}).then(function(blob){
       zipCache=blob;if(lastHeadSha)artSha=lastHeadSha;
       saveBlob(blob,name);
       b.textContent='✓ zip downloaded · '+(blob.size/1024).toFixed(0)+' KB';
