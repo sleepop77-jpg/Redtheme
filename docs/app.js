@@ -169,9 +169,10 @@ enterDash();
     if(/===\s*(PUSHBRIDGE|VIBEBRIDGE)\s*===/i.test(t)){chatIn.value='';armSend();pushPipeline(t);return}
     chatLog.classList.remove('hidden');
     var u=document.createElement('div');u.className='msg user';u.textContent=t;chatLog.appendChild(u);
-    var b=document.createElement('div');b.className='msg bot';b.textContent='Heard. The reply engine is the next brick — for now your words are safely on the board.';chatLog.appendChild(b);
+    var b=document.createElement('div');b.className='msg bot';b.textContent='⚡ Waking up Qwen 2.5 1.5B...';chatLog.appendChild(b);
     chatLog.scrollTop=chatLog.scrollHeight;
     chatIn.value='';armSend();chatIn.focus();
+    askLocalAI(t, b);
   }
   if(sendBtn)sendBtn.addEventListener('click',sendChat);
   function armSend(){if(sendBtn&&chatIn)sendBtn.classList.toggle('armed',chatIn.value.trim().length>0)}
@@ -512,6 +513,86 @@ enterDash();
     }).catch(function(e){b.textContent='✗ '+e.message});
   };
 
+
+  /* ---- ON-DEVICE AI (QWEN 2.5 1.5B via WebLLM) ---- */
+  var mlcEngine = null;
+  var aiLoading = false;
+  var aiHistory = [];
+
+  async function getLocalEngine(logFn) {
+    if (mlcEngine) return mlcEngine;
+    if (aiLoading) {
+      while (!mlcEngine) await new Promise(r => setTimeout(r, 500));
+      return mlcEngine;
+    }
+    aiLoading = true;
+    try {
+      logFn('⚡ Importing WebLLM engine...');
+      const webllm = await import("https://esm.run/@mlc-ai/web-llm");
+      logFn('⚡ Downloading Qwen 2.5 1.5B (~1GB, cached after first load)...');
+      
+      const initProgressCallback = (report) => {
+        if (report.text) logFn('⚡ ' + report.text);
+      };
+
+      mlcEngine = await webllm.CreateMLCEngine(
+        "Qwen2.5-1.5B-Instruct-q4f16_1",
+        { initProgressCallback: initProgressCallback }
+      );
+      logFn('🧠 Qwen 2.5 1.5B is online.');
+      return mlcEngine;
+    } catch (err) {
+      logFn('✗ AI Engine failed: ' + err.message + ' (Ensure WebGPU is enabled in your browser)');
+      throw err;
+    } finally {
+      aiLoading = false;
+    }
+  }
+
+  async function askLocalAI(question, botBubble) {
+    var logFn = function(msg) { botBubble.textContent = msg; chatLog.scrollTop = chatLog.scrollHeight; };
+    
+    try {
+      var engine = await getLocalEngine(logFn);
+      
+      // Build context from the repo tree so the AI knows the project structure
+      var sysPrompt = "You are PushBridge AI, an expert coding assistant running locally in the browser. The user is working on a GitHub repository. Here is the current file structure of their project:\n";
+      if (lastTree && lastTree.length > 0) {
+        var files = lastTree.filter(function(e){return e.type==='blob'}).map(function(e){return e.path}).slice(0, 100);
+        sysPrompt += files.join("\n") + "\n\n";
+      }
+      sysPrompt += "Answer the user's questions about their code concisely. If they ask you to write or fix code, provide the raw code blocks.";
+
+      aiHistory.push({ role: "user", content: question });
+      // Keep history manageable for the 1.5B model's context window
+      if (aiHistory.length > 10) aiHistory = aiHistory.slice(-10);
+
+      logFn('🧠 Thinking...');
+      
+      const messages = [{ role: "system", content: sysPrompt }, ...aiHistory];
+      const chunks = await engine.chat.completions.create({
+        messages: messages,
+        stream: true,
+        temperature: 0.7
+      });
+
+      var fullReply = "";
+      botBubble.textContent = "";
+      for await (const chunk of chunks) {
+        const curDelta = chunk.choices[0].delta.content;
+        if (curDelta) {
+          fullReply += curDelta;
+          botBubble.textContent = fullReply;
+          chatLog.scrollTop = chatLog.scrollHeight;
+        }
+      }
+      
+      aiHistory.push({ role: "assistant", content: fullReply });
+
+    } catch (e) {
+      botBubble.textContent = '✗ AI Error: ' + e.message;
+    }
+  }
 
   /* ---- PUSHBRIDGE CORE ENGINE ---- */
   function apiReq(method,path,body){
