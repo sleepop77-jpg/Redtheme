@@ -169,7 +169,7 @@ enterDash();
     if(/===\s*(PUSHBRIDGE|VIBEBRIDGE)\s*===/i.test(t)){chatIn.value='';armSend();pushPipeline(t);return}
     chatLog.classList.remove('hidden');
     var u=document.createElement('div');u.className='msg user';u.textContent=t;chatLog.appendChild(u);
-    var b=document.createElement('div');b.className='msg bot';b.textContent='⚡ Waking up Qwen 2.5 1.5B...';chatLog.appendChild(b);
+    var b=document.createElement('div');b.className='msg bot';b.textContent='⚡ Waking up on-device AI...';chatLog.appendChild(b);
     chatLog.scrollTop=chatLog.scrollHeight;
     chatIn.value='';armSend();chatIn.focus();
     askLocalAI(t, b);
@@ -519,6 +519,23 @@ enterDash();
   var aiLoading = false;
   var aiHistory = [];
 
+  var MODEL_PREFS=[/qwen2\.5[-.]?1\.5b/i,/qwen2\.5[-.]?0\.5b/i,/qwen/i,/llama-3\.2-1b/i,/smollm2/i,/tinyllama/i];
+  var MODEL_FALLBACK=['Qwen2.5-1.5B-Instruct-q4f16_1','Qwen2.5-0.5B-Instruct-q4f16_1','Qwen2-1.5B-Instruct-q4f16_1','Llama-3.2-1B-Instruct-q4f16_1','SmolLM2-1.7B-Instruct-q4f16_1','TinyLlama-1.1B-Chat-v1.0-q4f16_1'];
+  var chosenModel='';
+  function resolveModelId(webllm){
+    var list=null;
+    try{
+      var pc=webllm.prebuiltAppConfig||(webllm.default&&webllm.default.prebuiltAppConfig);
+      if(pc&&pc.model_list)list=pc.model_list.map(function(m){return m.model_id||m.model});
+    }catch(e){}
+    if(list&&list.length){
+      for(var i=0;i<MODEL_PREFS.length;i++){
+        for(var j=0;j<list.length;j++){if(MODEL_PREFS[i].test(list[j]))return list[j]}
+      }
+      return list[0];
+    }
+    return null;
+  }
   async function getLocalEngine(logFn) {
     if (mlcEngine) return mlcEngine;
     if (aiLoading) {
@@ -529,17 +546,26 @@ enterDash();
     try {
       logFn('⚡ Importing WebLLM engine...');
       const webllm = await import("https://esm.run/@mlc-ai/web-llm");
-      logFn('⚡ Downloading Qwen 2.5 1.5B (~1GB, cached after first load)...');
-      
+      const picked = resolveModelId(webllm);
+      const candidates = picked ? [picked].concat(MODEL_FALLBACK.filter(function(m){return m!==picked})) : MODEL_FALLBACK;
       const initProgressCallback = (report) => {
         if (report.text) logFn('⚡ ' + report.text);
       };
-
-      mlcEngine = await webllm.CreateMLCEngine(
-        "Qwen2.5-1.5B-Instruct-q4f16_1",
-        { initProgressCallback: initProgressCallback }
-      );
-      logFn('🧠 Qwen 2.5 1.5B is online.');
+      var lastErr=null;
+      for (var k=0;k<candidates.length;k++){
+        try {
+          logFn('⚡ Loading on-device model: ' + candidates[k] + ' (cached after first download)...');
+          mlcEngine = await webllm.CreateMLCEngine(candidates[k], { initProgressCallback: initProgressCallback });
+          chosenModel = candidates[k];
+          break;
+        } catch (err) {
+          lastErr=err;
+          if (/Cannot find model record/i.test(err.message||'')) continue;
+          throw err;
+        }
+      }
+      if (!mlcEngine) throw lastErr || new Error('no usable on-device model in this WebLLM build');
+      logFn('🧠 ' + chosenModel + ' is online.');
       return mlcEngine;
     } catch (err) {
       logFn('✗ AI Engine failed: ' + err.message + ' (Ensure WebGPU is enabled in your browser)');
