@@ -429,6 +429,36 @@ enterDash();
     }).catch(function(e){$('#xl-status').textContent='✗ '+e.message}).finally(function(){xlSave.disabled=false});
   };
 
+  /* ---- DOWNLOADS: ZIP + MD ---- */
+  function dlBubble(msg){dockChat();var b=document.createElement('div');b.className='msg bot';b.textContent=msg;chatLog.appendChild(b);chatLog.scrollTop=chatLog.scrollHeight;return b}
+  var dZip=$('#dock-zip');
+  if(dZip)dZip.onclick=function(){
+    var b=dlBubble('zipping '+state.repo.full_name+' @ '+state.repo.branch+'…');
+    fetch('https://api.github.com/repos/'+state.repo.full_name+'/zipball/'+state.repo.branch,{headers:{Authorization:'Bearer '+state.pat,Accept:'application/vnd.github+json'}}).then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.blob()}).then(function(blob){
+      var a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=state.repo.name+'-'+state.repo.branch+'.zip';document.body.appendChild(a);a.click();a.remove();
+      setTimeout(function(){URL.revokeObjectURL(a.href)},5000);
+      b.textContent='✓ zip downloaded · '+(blob.size/1024).toFixed(0)+' KB';
+    }).catch(function(e){b.textContent='✗ '+e.message});
+  };
+  var dMd=$('#dock-md');
+  if(dMd)dMd.onclick=function(){
+    var b=dlBubble('building markdown export…');
+    var files=(lastTree||[]).filter(function(e){return e.type==='blob'&&e.size<=100000&&SEARCH_EXT.test(e.path)});
+    (async function(){
+      var out='# '+state.repo.full_name+'\n\n> Exported by PushBridge · branch '+state.repo.branch+' · '+new Date().toISOString()+'\n\n';
+      for(var i=0;i<files.length;i++){
+        b.textContent='building md '+(i+1)+'/'+files.length+' · '+files[i].path;
+        var c;try{c=await getFileContent(files[i].path)}catch(e){continue}
+        var ext=(files[i].path.split('.').pop()||'').toLowerCase();
+        out+='## '+files[i].path+'\n\n```'+ext+'\n'+c.split('```').join('`‌`‌`')+'\n```\n\n';
+      }
+      var blob=new Blob([out],{type:'text/markdown'});
+      var a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=state.repo.name+'-pushbridge.md';document.body.appendChild(a);a.click();a.remove();
+      setTimeout(function(){URL.revokeObjectURL(a.href)},5000);
+      b.textContent='✓ markdown exported · '+files.length+' files · '+(blob.size/1024).toFixed(0)+' KB';
+    })();
+  };
+
 
   /* ---- PUSHBRIDGE CORE ENGINE ---- */
   function apiReq(method,path,body){
