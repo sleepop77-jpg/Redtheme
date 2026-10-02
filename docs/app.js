@@ -575,6 +575,11 @@ enterDash();
     }
   }
 
+  function showThinking(b){
+    b.innerHTML='<span class="think-row"><span class="think-logo"><img src="logo.png" alt="" onerror="this.style.display=\'none\'"></span>'+
+      '<span class="think-txt">Thinking<span class="think-dots"><span>.</span><span>.</span><span>.</span></span></span></span>';
+    chatLog.scrollTop=chatLog.scrollHeight;
+  }
   async function askLocalAI(question, botBubble) {
     var logFn = function(msg) { botBubble.textContent = msg; chatLog.scrollTop = chatLog.scrollHeight; };
     
@@ -593,7 +598,7 @@ enterDash();
       // Keep history manageable for the 1.5B model's context window
       if (aiHistory.length > 10) aiHistory = aiHistory.slice(-10);
 
-      logFn('🧠 Thinking...');
+      showThinking(botBubble);
       
       const messages = [{ role: "system", content: sysPrompt }, ...aiHistory];
       const chunks = await engine.chat.completions.create({
