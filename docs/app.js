@@ -1015,8 +1015,41 @@ enterDash();
       if(tc)return reply('✓ inserted '+tc+' cell value(s) into the Excel workspace · saved privately');
     }
 
-    var clear=q.match(/^(?:clear|erase|empty|delete)\s+(?:the\s+)?(?:contents?\s+of\s+)?(?:cell\s+)?([A-Z]{1,3}\d+)\s*(?:to|through|-)\s*(
-```
+     var clear=q.match(/^(?:clear|erase|empty|delete)\s+(?:the\s+)?(?:contents?\s+of\s+)?(?:cell\s+)?([A-Z]{1,3}\d+)(?:\s*(?:to|through|-)\s*([A-Z]{1,3}\d+))?\s*$/i);
+    if(clear){
+      xlShowWorkspace();
+      var from=xlCellPosition(clear[1]);
+      var to=xlCellPosition(clear[2]||clear[1]);
+      var ccount=0;
+      if(from&&to){
+        for(var cr=from.row;cr<=to.row;cr++){
+          for(var ccol=from.col;ccol<=to.col;ccol++){
+            if(xlSetCell(String.fromCharCode(65+ccol)+cr,''))ccount++;
+          }
+        }
+        if(ccount)return reply('✓ cleared '+ccount+' cell(s) · saved to private Excel workspace');
+      }
+    }
+
+    var formula=q.match(/^(?:put|enter|write|set)\s+(?:the\s+)?formula\s+([\s\S]+?)\s+(?:in|into)\s+(?:cell\s+)?([A-Z]{1,3}\d+)\s*$/i);
+    if(formula){
+      xlShowWorkspace();
+      if(xlSetCell(formula[2],clean(formula[1])))return reply('✓ formula placed in '+formula[2]+' · saved to private Excel workspace');
+    }
+
+    var simple=q.match(/^(?:type|put|enter|write|add|paste|place|insert)\s+([\s\S]+?)\s+(?:in|into|on)\s+(?:the\s+)?(?:spreadsheet|excel|sheet)\s*$/i);
+    if(simple){
+      var sv3=values(simple[1]);
+      xlShowWorkspace();
+      var target=xlFirstEmptyRow();
+      if(target){
+        var changed=xlSetRow(target,sv3);
+        if(changed)return reply('✓ inserted '+changed+' value(s) into Excel row '+target+' · saved to private workspace');
+      }
+    }
+
+    return false;
+  }
 
   function xlCellPosition(ref){
     var m=String(ref||'').trim().toUpperCase().match(/^([A-Z]{1,3})(\d+)$/);
