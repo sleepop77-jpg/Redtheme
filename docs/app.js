@@ -710,6 +710,7 @@ enterDash();
         else{await apiPost(R+'/git/refs',{ref:'refs/heads/'+state.repo.branch,sha:cm.json.sha})}
         var h=histPush();h.unshift({repo:state.repo.full_name,at:Date.now(),files:ops.length,ok:true,commit:cm.json.sha});
         localStorage.setItem('pb_history',JSON.stringify(h.slice(0,50)));
+        if(typeof logPayloadToExcel==='function')logPayloadToExcel(ops,cm.json.sha,text);
         log('✓ Pushed '+ops.length+' file(s) · commit '+cm.json.sha.slice(0,7)+' · '+cm.json.html_url);
       }catch(e){log('✗ '+(e.message||e))}
       finally{sendBtn.disabled=false;chatLog.scrollTop=chatLog.scrollHeight;loadTree()}
