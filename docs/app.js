@@ -258,8 +258,22 @@ enterDash();
       :'✓ checked commits · no new commits';
   }
 
+  function expandLoopTask(loop){
+    var count=Number(loop.count||0);
+    var now=new Date();
+    var time=now.toLocaleTimeString();
+    var timestamp=now.toLocaleString();
+
+    return String(loop.task||'')
+      .replace(/\{n\}/gi,String(count))
+      .replace(/\{count\}/gi,String(count))
+      .replace(/\{run\}/gi,String(count))
+      .replace(/\{time\}/gi,time)
+      .replace(/\{timestamp\}/gi,timestamp);
+  }
+
   async function runExcelLoop(loop){
-    var task=String(loop.task||'').trim();
+    var task=expandLoopTask(loop);
     var lower=task.toLowerCase();
 
     if(/commit/.test(lower)&&/excel|spreadsheet|sheet/.test(lower)){
@@ -276,6 +290,9 @@ enterDash();
     }
 
     if(b){
+      if(tryDirectExcelCommand(task,b)){
+        return'✓ Excel task executed directly';
+      }
       await askLocalAI(task,b);
       return'✓ AI Excel task executed';
     }
@@ -292,6 +309,9 @@ enterDash();
       if(!pushLoops.some(function(x){return x.id===loop.id}))return;
 
       try{
+        loop.count=Number(loop.count||0)+1;
+        savePushLoops();
+
         var result=await runExcelLoop(loop);
         loop.lastRun=Date.now();
         loop.lastResult=result;
@@ -405,7 +425,8 @@ enterDash();
         repo:loopKey(),
         createdAt:Date.now(),
         lastRun:0,
-        lastResult:''
+        lastResult:'',
+        count:0
       };
 
       pushLoops.push(loop);
