@@ -384,6 +384,76 @@ enterDash();
 
   /* ---- EXCEL WINDOW ---- */
   var xlBuilt=false;
+  var xlSaveTimer=null;
+
+  function saveXlWorkspace(){
+    var tbl=$('#xl-grid');
+    if(!tbl)return;
+    var cells=[];
+    for(var r=1;r<tbl.rows.length;r++){
+      var row=[];
+      for(var c=1;c<tbl.rows[r].cells.length;c++){
+        row.push(tbl.rows[r].cells[c].textContent||'');
+      }
+      cells.push(row);
+    }
+    try{
+      localStorage.setItem('pb_excel_workspace',JSON.stringify({
+        name:(($('#xl-name').value||'').trim()||'sheet1.csv'),
+        cells:cells,
+        updatedAt:Date.now()
+      }));
+    }catch(e){}
+  }
+
+  function scheduleXlWorkspaceSave(){
+    clearTimeout(xlSaveTimer);
+    xlSaveTimer=setTimeout(saveXlWorkspace,250);
+  }
+
+  function restoreXlWorkspace(){
+    var tbl=$('#xl-grid');
+    if(!tbl)return;
+    try{
+      var raw=localStorage.getItem('pb_excel_workspace');
+      if(!raw)return;
+      var data=JSON.parse(raw);
+      if(data.name){
+        var nm=$('#xl-name');
+        if(nm)nm.value=data.name;
+      }
+      if(!Array.isArray(data.cells))return;
+      for(var r=0;r<data.cells.length&&r<tbl.rows.length-1;r++){
+        for(var c=0;c<data.cells[r].length&&c<tbl.rows[r+1].cells.length-1;c++){
+          tbl.rows[r+1].cells[c+1].textContent=data.cells[r][c]||'';
+        }
+      }
+    }catch(e){}
+  }
+
+  function xlWorkspaceContext(){
+    var tbl=$('#xl-grid');
+    if(!tbl)return'';
+    try{
+      var rows=[];
+      for(var r=1;r<tbl.rows.length;r++){
+        var cells=tbl.rows[r].cells;
+        var row=[];
+        var hasData=false;
+        for(var c=1;c<cells.length;c++){
+          var value=(cells[c].textContent||'').replace(/\r?\n/g,' ');
+          row.push(value);
+          if(value.trim())hasData=true;
+        }
+        if(hasData)rows.push(row.join(' | '));
+      }
+      return rows.join('\n').slice(0,12000);
+    }catch(e){
+      return'';
+    }
+  }
+
+  function buildXl(){
   function buildXl(){
     if(xlBuilt)return;xlBuilt=true;
     var tbl=$('#xl-grid');if(!tbl)return;
