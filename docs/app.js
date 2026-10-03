@@ -141,6 +141,7 @@ enterDash();
     var tn=$('#tb-name');if(tn)tn.textContent=state.repo?state.repo.full_name:'—';
     loadTree();
     show('dash');
+    restorePushLoops();
   }
   var segs=document.querySelectorAll('.seg-btn');
   segs.forEach(function(s){s.addEventListener('click',function(){
@@ -151,6 +152,366 @@ enterDash();
     document.querySelectorAll('#dash-canvas [data-seg]').forEach(function(el){el.classList.toggle('hidden',el.dataset.seg!==s.dataset.seg)});
   })});
   var sendBtn=$('#chat-send'),chatIn=$('#chat-input'),chatLog=$('#chat-log');
+
+  /* ---- RECURRING EXCEL LOOPS ---- */
+  var pushLoops=[];
+  var pushLoopTimers={};
+  var pushLoopKey='pb_excel_loops';
+
+  function loadPushLoops(){
+    try{
+      var raw=JSON.parse(localStorage.getItem(pushLoopKey)||'[]');
+      pushLoops=Array.isArray(raw)?raw:[];
+    }catch(e){
+      pushLoops=[];
+    }
+  }
+
+  function savePushLoops(){
+    try{
+      localStorage.setItem(pushLoopKey,JSON.stringify(pushLoops));
+    }catch(e){}
+  }
+
+  function parseLoopDuration(text){
+    var m=String(text||'').trim().toLowerCase().match(/^(\d+(?:\.\d+)?)\s*(s|sec|secs|second|seconds|m|min|mins|minute|minutes|h|hr|hrs|hour|hours|d|day|days)$/);
+    if(!m)return 0;
+    var n=parseFloat(m[1]);
+    var unit=m[2];
+    if(/^s/.test(unit))return n*1000;
+    if(/^m/.test(unit))return n*60000;
+    if(/^h/.test(unit))return n*3600000;
+    if(/^d/.test(unit))return n*86400000;
+    return 0;
+  }
+
+  function formatLoopDuration(ms){
+    if(ms%86400000===0)return(ms/86400000)+'d';
+    if(ms%3600000===0)return(ms/3600000)+'h';
+    if(ms%60000===0)return(ms/60000)+'m';
+    return(ms/1000)+'s';
+  }
+
+  function loopBubble(message){
+    if(!chatLog)return null;
+    chatLog.classList.remove('hidden');
+    dockChat();
+    var b=document.createElement('div');
+    b.className='msg bot';
+    b.textContent=message;
+    chatLog.appendChild(b);
+    chatLog.scrollTop=chatLog.scrollHeight;
+    return b;
+  }
+
+  function loopRepoKey(){
+    return state.repo ? state.repo.full_name+'@'+state.repo.branch : '';
+  }
+
+  async function runCommitExcelLoop(loop){
+    if(!state.repo)throw new Error('No GitHub repository is selected');
+
+    var repoKey=loopRepoKey();
+    var url='/repos/'+state.repo.full_name+'/commits?sha='+encodeURIComponent(state.repo.branch)+'&per_page=30';
+    var response=await apiGet(url);
+    var commits=Array.isArray(response.json)?response.json:[];
+
+    if(!commits.length)return{added:0,message:'No commits found'};
+
+    buildXl();
+
+    var tbl=$('#xl-grid');
+    var sheetEmpty=xlFirstEmptyRow()===1;
+
+    if(sheetEmpty){
+      xlSetRow(1,[
+        'Checked At',
+        'Commit Time',
+        'Commit',
+        'Author',
+        'Message',
+        'URL'
+      ]);
+    }
+
+    var stateKey='pb_loop_seen_'+repoKey;
+    var seen=[];
+    try{seen=JSON.parse(localStorage.getItem(stateKey)||'[]')}catch(e){seen=[]}
+    if(!Array.isArray(seen))seen=[];
+
+    var isFirstRun=seen.length===0;
+    var fresh=[];
+
+    for(var i=0;i<commits.length;i++){
+      if(seen.indexOf(commits[i].sha)<0)fresh.push(commits[i]);
+    }
+
+    /*
+      First run: record the latest commit only.
+      Later runs: record every unseen commit, oldest → newest.
+    */
+    if(isFirstRun)fresh=commits.slice(0,1);
+    else fresh=fresh.reverse();
+
+    var added=0;
+    var checkedAt=new Date().toLocaleString();
+
+    for(var j=0;j<fresh.length;j++){
+      var c=fresh[j];
+      var target=xlFirstEmptyRow();
+      if(!target)break;
+
+      var commitTime='';
+      if(c.commit&&c.commit.author&&c.commit.author.date){
+        commitTime=new Date(c.commit.author.date).toLocaleString();
+      }
+
+      var author='Unknown';
+      if(c.author&&c.author.login)author=c.author.login;
+      else if(c.commit&&c.commit.author&&c.commit.author.name)author=c.commit.author.name;
+
+      var message=((c.commit&&c.commit.message)||'').split('\n')[0].trim();
+
+      added+=xlSetRow(target,[
+        checkedAt,
+        commitTime,
+        String(c.sha||'').slice(0,7),
+        author,
+        message,
+        c.html_url||''
+      ]);
+    }
+
+    var mergedSeen=seen.slice();
+
+    commits.forEach(function(c){
+      if(mergedSeen.indexOf(c.sha)<0)mergedSeen.push(c.sha);
+    });
+
+    mergedSeen=mergedSeen.slice(-100);
+    try{localStorage.setItem(stateKey,JSON.stringify(mergedSeen))}catch(e){}
+    saveXlWorkspace();
+
+    return{
+      added:added,
+      message:added
+        ? '✓ '+added+' new commit(s) logged to Excel'
+        : '✓ checked commits · no new commits'
+    };
+  }
+
+  async function runPushLoop(loop){
+    var task=String(loop.task||'').trim();
+    var lower=task.toLowerCase();
+
+    /*
+      Deterministic Excel automations run without Qwen.
+      This prevents a small local model from accidentally dropping data.
+    */
+    if(
+      /commit/.test(lower) &&
+      /excel|spreadsheet|sheet/.test(lower)
+    ){
+      return await runCommitExcelLoop(loop);
+    }
+
+    /*
+      Other recurring Excel instructions can still be handed to the
+      local AI and can use the same private workspace/action parser.
+    */
+    var b=loopBubble('⟳ running loop · '+task);
+    await askLocalAI(task,b);
+    return{added:0,message:'AI loop executed'};
+  }
+
+  function schedulePushLoop(loop,immediate){
+    if(pushLoopTimers[loop.id])clearTimeout(pushLoopTimers[loop.id]);
+
+    var delay=immediate?0:Math.max(1000,loop.interval);
+
+    pushLoopTimers[loop.id]=setTimeout(async function(){
+      delete pushLoopTimers[loop.id];
+
+      var stillActive=pushLoops.some(function(x){return x.id===loop.id});
+      if(!stillActive)return;
+
+      try{
+        var result=await runPushLoop(loop);
+        var stamp=new Date().toLocaleTimeString();
+        loop.lastRun=Date.now();
+        loop.lastResult=result&&result.message?result.message:'✓ completed';
+
+        savePushLoops();
+
+        var b=loopBubble(
+          '⟳ '+formatLoopDuration(loop.interval)+
+          ' loop · '+stamp+' · '+loop.task+
+          '\n'+loop.lastResult
+        );
+        if(b)chatLog.scrollTop=chatLog.scrollHeight;
+      }catch(e){
+        loop.lastRun=Date.now();
+        loop.lastResult='✗ '+(e.message||String(e));
+        savePushLoops();
+        loopBubble(
+          '⟳ loop error · '+(e.message||String(e))+
+          '\nNext run: '+formatLoopDuration(loop.interval)
+        );
+      }
+
+      schedulePushLoop(loop,false);
+    },delay);
+  }
+
+  function stopPushLoop(id){
+    var idx=-1;
+
+    if(String(id).toLowerCase()==='all'){
+      pushLoops.forEach(function(loop){
+        if(pushLoopTimers[loop.id])clearTimeout(pushLoopTimers[loop.id]);
+      });
+      pushLoops=[];
+      savePushLoops();
+      return true;
+    }
+
+    idx=pushLoops.findIndex(function(loop,n){
+      return String(n+1)===String(id)||String(loop.id)===String(id);
+    });
+
+    if(idx<0)return false;
+
+    var loop=pushLoops[idx];
+    if(pushLoopTimers[loop.id])clearTimeout(pushLoopTimers[loop.id]);
+    delete pushLoopTimers[loop.id];
+    pushLoops.splice(idx,1);
+    savePushLoops();
+    return true;
+  }
+
+  function listPushLoops(){
+    loadPushLoops();
+    var active=pushLoops.filter(function(loop){
+      return !state.repo||loop.repo===loopRepoKey();
+    });
+
+    if(!active.length){
+      loopBubble('⟳ No active loops for this repository.');
+      return true;
+    }
+
+    var out=['⟳ Active Excel loops:'];
+
+    active.forEach(function(loop,i){
+      var last=loop.lastRun
+        ? new Date(loop.lastRun).toLocaleString()
+        : 'not run yet';
+
+      out.push(
+        (i+1)+'. every '+formatLoopDuration(loop.interval)+
+        ' · '+loop.task+
+        ' · last: '+last
+      );
+    });
+
+    loopBubble(out.join('\n'));
+    return true;
+  }
+
+  function restorePushLoops(){
+    loadPushLoops();
+
+    Object.keys(pushLoopTimers).forEach(function(id){
+      clearTimeout(pushLoopTimers[id]);
+      delete pushLoopTimers[id];
+    });
+
+    if(!state.repo)return;
+
+    pushLoops.forEach(function(loop){
+      if(loop.repo===loopRepoKey()){
+        schedulePushLoop(loop,false);
+      }
+    });
+  }
+
+  function handleLoopCommand(text){
+    var q=String(text||'').trim();
+
+    if(/^\/loop\s+(?:list|ls)$/i.test(q)){
+      listPushLoops();
+      return true;
+    }
+
+    var stop=q.match(/^\/loop\s+(?:off|stop|cancel)\s+(all|\d+)$/i);
+    if(stop){
+      if(stopPushLoop(stop[1])){
+        loopBubble('✓ loop '+stop[1]+' stopped');
+      }else{
+        loopBubble('✗ loop not found: '+stop[1]);
+      }
+      return true;
+    }
+
+    var create=q.match(/^\/loop\s+([0-9]+(?:\.[0-9]+)?\s*(?:s|sec|secs|second|seconds|m|min|mins|minute|minutes|h|hr|hrs|hour|hours|d|day|days))\s+([\s\S]+)$/i);
+
+    if(create){
+      if(!state.repo){
+        loopBubble('✗ Select a GitHub repository before creating a loop.');
+        return true;
+      }
+
+      var interval=parseLoopDuration(create[1]);
+      var task=create[2].trim();
+
+      if(!interval||!task){
+        loopBubble('✗ Invalid loop. Example: /loop 5m check for commits and paste them in Excel with the time');
+        return true;
+      }
+
+      if(interval<10000){
+        loopBubble('✗ Minimum loop interval is 10 seconds.');
+        return true;
+      }
+
+      var loop={
+        id:Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,7),
+        interval:interval,
+        task:task,
+        repo:loopRepoKey(),
+        createdAt:Date.now(),
+        lastRun:0,
+        lastResult:''
+      };
+
+      pushLoops.push(loop);
+      savePushLoops();
+
+      loopBubble(
+        '✓ loop created · every '+formatLoopDuration(interval)+
+        '\nTask: '+task+
+        '\nFirst run: now'
+      );
+
+      schedulePushLoop(loop,true);
+      return true;
+    }
+
+    if(/^\/loop\b/i.test(q)){
+      loopBubble(
+        'Loop usage:\n'+
+        '/loop 5m check for commits and paste them in Excel with the time\n'+
+        '/loop 30m put a timestamp in Excel\n'+
+        '/loop list\n'+
+        '/loop off 1\n'+
+        '/loop off all'
+      );
+      return true;
+    }
+
+    return false;
+  }
+
   function dockChat(){var c=document.getElementById('dash-canvas');if(c)c.classList.add('docked')}
   function setIdleBrand(show){
     var el=$('#idle-brand');if(!el)return;
@@ -166,14 +527,19 @@ enterDash();
     var t=chatIn.value.trim();
     if(!t){chatIn.style.borderColor='var(--error)';setTimeout(function(){chatIn.style.borderColor=''},450);chatIn.focus();return}
     dockChat();setIdleBrand(false);
+
+    if(handleLoopCommand(t)){
+      chatIn.value='';
+      armSend();
+      chatIn.focus();
+      return;
+    }
+
     if(/===\s*(PUSHBRIDGE|VIBEBRIDGE)\s*===/i.test(t)){chatIn.value='';armSend();pushPipeline(t);return}
     chatLog.classList.remove('hidden');
     var u=document.createElement('div');u.className='msg user';u.textContent=t;chatLog.appendChild(u);
-    var b=document.createElement('div');b.className='msg bot';b.textContent='⚡ Waking up on-device AI...';chatLog.appendChild(b);
-    chatLog.scrollTop=chatLog.scrollHeight;
-    chatIn.value='';armSend();chatIn.focus();
-    askLocalAI(t, b);
-  }
+    var b=document.createElement('div')
+```
   if(sendBtn)sendBtn.addEventListener('click',sendChat);
   function armSend(){if(sendBtn&&chatIn)sendBtn.classList.toggle('armed',chatIn.value.trim().length>0)}
   if(chatIn)chatIn.addEventListener('input',function(){armSend();updateIdle()});
