@@ -516,10 +516,10 @@ enterDash();
 
   /* ---- ON-DEVICE AI (QWEN 2.5 1.5B via WebLLM) ---- */
   var mlcEngine = null;
-  var aiLoading = false;
+  var engineState = 'null';
+  var engineInitPromise = null;
+  var generationQueue = Promise.resolve();
   var aiHistory = [];
-  var aiMinimal = false;
-
   var MODEL_PREFS=[/qwen2\.5[-.]?1\.5b/i,/qwen2\.5[-.]?0\.5b/i,/qwen/i,/llama-3\.2-1b/i,/smollm2/i,/tinyllama/i];
   var MODEL_FALLBACK=['Qwen2.5-1.5B-Instruct-q4f16_1','Qwen2.5-0.5B-Instruct-q4f16_1','Qwen2-1.5B-Instruct-q4f16_1','Llama-3.2-1B-Instruct-q4f16_1','SmolLM2-1.7B-Instruct-q4f16_1','TinyLlama-1.1B-Chat-v1.0-q4f16_1'];
   var chosenModel='';
@@ -537,60 +537,121 @@ enterDash();
     }
     return null;
   }
-  async function getLocalEngine(logFn) {
-    if (mlcEngine) return mlcEngine;
-    if (aiLoading) {
-      while (!mlcEngine) await new Promise(r => setTimeout(r, 500));
-      return mlcEngine;
-    }
-    aiLoading = true;
-    try {
-      logFn('⚡ Importing WebLLM engine...');
-      const webllm = await import("https://esm.run/@mlc-ai/web-llm");
-      const picked = resolveModelId(webllm);
-      const candidates = picked ? [picked].concat(MODEL_FALLBACK.filter(function(m){return m!==picked})) : MODEL_FALLBACK;
-      const initProgressCallback = (report) => {
-        if (report.text) logFn('⚡ ' + report.text);
-      };
-      var lastErr=null;
-      for (var k=0;k<candidates.length;k++){
-        try {
-          logFn('⚡ Loading on-device model: ' + candidates[k] + ' (cached after first download)...');
-          mlcEngine = await webllm.CreateMLCEngine(candidates[k], { initProgressCallback: initProgressCallback });
-          chosenModel = candidates[k];
-          break;
-        } catch (err) {
-          lastErr=err;
-          if (/Cannot find model record/i.test(err.message||'')) continue;
-          throw err;
-        }
-      }
-      if (!mlcEngine) throw lastErr || new Error('no usable on-device model in this WebLLM build');
-      logFn('🧠 ' + chosenModel + ' is online.');
-      return mlcEngine;
-    } catch (err) {
-      logFn('✗ AI Engine failed: ' + err.message + ' (Ensure WebGPU is enabled in your browser)');
-      throw err;
-    } finally {
-      aiLoading = false;
+  async function resetLocalEngine(logFn) {
+    if (logFn) logFn('⚡ Resetting AI engine...');
+    var oldEngine = mlcEngine;
+    mlcEngine = null;
+    engineState = 'null';
+    engineInitPromise = null;
+    if (oldEngine) {
+      try {
+        if (typeof oldEngine.unload === 'function') await oldEngine.unload();
+        else if (typeof oldEngine.dispose === 'function') oldEngine.dispose();
+      } catch (e) {}
     }
   }
+  async function getLocalEngine(logFn) {
+    if (engineState === 'ready' && mlcEngine) return mlcEngine;
+    if (engineState === 'loading' && engineInitPromise) return engineInitPromise;
+    engineState = 'loading';
+    engineInitPromise = (async () => {
+      try {
+        logFn('🔍 Checking WebGPU capabilities...');
+        if (!navigator.gpu) {
+          throw new Error('WEBGPU_UNAVAILABLE');
+        }
+        logFn('✓ WebGPU API available: yes');
+        var adapter = null;
+        try {
+          adapter = await navigator.gpu.requestAdapter();
+        } catch (e) {
+          throw new Error('WEBGPU_ADAPTER_FAILED');
+        }
+        if (!adapter) {
+          throw new Error('WEBGPU_NO_ADAPTER');
+        }
+        logFn('✓ Compatible GPU adapter found: yes');
 
+        logFn('⚡ Importing WebLLM engine...');
+        const webllm = await import("https://esm.run/@mlc-ai/web-llm");
+        const picked = resolveModelId(webllm);
+        const candidates = picked ? [picked].concat(MODEL_FALLBACK.filter(function(m){return m!==picked})) : MODEL_FALLBACK;
+        const initProgressCallback = (report) => {
+          if (report.text) logFn('⚡ ' + report.text);
+        };
+        var lastErr=null;
+        for (var k=0;k<candidates.length;k++){
+          try {
+            logFn('⚡ Loading on-device model: ' + candidates[k] + ' (cached after first download)...');
+            mlcEngine = await webllm.CreateMLCEngine(candidates[k], { initProgressCallback: initProgressCallback });
+            chosenModel = candidates[k];
+            logFn('✓ Device creation succeeded: yes');
+            logFn('🧠 Selected model: ' + chosenModel);
+            break;
+          } catch (err) {
+            var msg = err.message || String(err);
+            if (/Unable to find a compatible GPU/i.test(msg) || /No compatible GPU/i.test(msg) || /Failed to request device/i.test(msg)) {
+              throw new Error('WEBGPU_DEVICE_FAILED');
+            }
+            lastErr=err;
+            if (/Cannot find model record/i.test(msg)) continue;
+            throw err;
+          }
+        }
+        if (!mlcEngine) throw lastErr || new Error('no usable on-device model in this WebLLM build');
+        engineState = 'ready';
+        return mlcEngine;
+      } catch (err) {
+        engineState = 'failed';
+        mlcEngine = null;
+        var msg = err.message || String(err);
+        var userMsg = '';
+        if (msg === 'WEBGPU_UNAVAILABLE') {
+          userMsg = 'WebGPU is not available in this browser. Local AI requires a browser with WebGPU support.';
+        } else if (msg === 'WEBGPU_ADAPTER_FAILED' || msg === 'WEBGPU_NO_ADAPTER') {
+          userMsg = 'WebGPU is available but no compatible GPU adapter could be initialized. Please enable hardware acceleration.';
+        } else if (msg === 'WEBGPU_DEVICE_FAILED') {
+          userMsg = 'Unable to find a compatible GPU. WebGPU device creation failed. Ensure hardware acceleration is enabled.';
+        } else {
+          userMsg = 'AI Engine failed: ' + msg;
+        }
+        logFn('✗ ' + userMsg);
+        throw new Error(userMsg);
+      }
+    })();
+    return engineInitPromise;
+  }
   function showThinking(b){
     b.innerHTML='<span class="think-row"><span class="think-logo"><img src="logo.png" alt="" onerror="this.style.display=\'none\'"></span>'+
       '<span class="think-txt">Thinking<span class="think-dots"><span>.</span><span>.</span><span>.</span></span></span></span>';
     chatLog.scrollTop=chatLog.scrollHeight;
   }
+  async function runGeneration(engine, messages, botBubble, logFn) {
+    showThinking(botBubble);
+    const chunks = await engine.chat.completions.create({
+      messages: messages,
+      stream: true,
+      temperature: 0.7
+    });
+    var fullReply = "";
+    botBubble.textContent = "";
+    for await (const chunk of chunks) {
+      const curDelta = chunk.choices[0].delta.content;
+      if (curDelta) {
+        fullReply += curDelta;
+        botBubble.textContent = fullReply;
+        chatLog.scrollTop = chatLog.scrollHeight;
+      }
+    }
+    return fullReply;
+  }
   async function askLocalAI(question, botBubble) {
     var logFn = function(msg) { botBubble.textContent = msg; chatLog.scrollTop = chatLog.scrollHeight; };
-    
-    try {
-      var engine = await getLocalEngine(logFn);
-      
+    generationQueue = generationQueue.then(async () => {
       var sysPrompt = "You are PushBridge AI, an expert coding assistant running locally in the browser. The user is working on a GitHub repository.\nFile structure:\n";
       var blobs = (lastTree || []).filter(function(e){return e.type==='blob' && SEARCH_EXT.test(e.path) && e.size <= 100000});
       if (blobs.length > 0) {
-        sysPrompt += blobs.map(function(e){return e.path}).slice(0, 60).join("\n") + "\n\n";
+        sysPrompt += blobs.map(function(e){return e.path}).slice(0, 120).join("\n") + "\n";
       }
       var terms = (question.toLowerCase().match(/[a-z0-9_]{3,}/g) || []).filter(function(v,i,a){return a.indexOf(v)===i}).slice(0, 5);
       var scored = [];
@@ -607,63 +668,45 @@ enterDash();
         if (score > 0) scored.push({path: blobs[i].path, score: score, content: content});
       }
       scored.sort(function(a,b){return b.score - a.score});
-      if (scored.length > 0 && !aiMinimal) {
+      if (scored.length > 0) {
         sysPrompt += "Most relevant file contents:\n";
         scored.slice(0, 2).forEach(function(f) {
-          sysPrompt += "\n=== " + f.path + " ===\n" + f.content.slice(0, 1200) + "\n";
+          sysPrompt += "\n=== " + f.path + " ===\n" + f.content.slice(0, 2000) + "\n";
         });
       }
       sysPrompt += "\nAnswer the user's questions about their code concisely using the provided file contents. If they ask you to write or fix code, provide the raw code blocks.";
-
-      aiHistory.push({ role: "user", content: question.slice(0, 1500) });
-      if (aiHistory.length > 6) aiHistory = aiHistory.slice(-6);
-      aiHistory = aiHistory.map(function(m){return {role: m.role, content: (m.content || '').slice(0, 900)}});
-
-      showThinking(botBubble);
-      
-      const messages = [{ role: "system", content: sysPrompt }, ...aiHistory];
-      const chunks = await engine.chat.completions.create({
-        messages: messages,
-        stream: true,
-        temperature: 0.7
-      });
-
-      var fullReply = "";
-      botBubble.textContent = "";
-      for await (const chunk of chunks) {
-        const curDelta = chunk.choices[0].delta.content;
-        if (curDelta) {
-          fullReply += curDelta;
-          botBubble.textContent = fullReply;
-          chatLog.scrollTop = chatLog.scrollHeight;
+      aiHistory.push({ role: "user", content: question });
+      if (aiHistory.length > 10) aiHistory = aiHistory.slice(-10);
+      var messages = [{ role: "system", content: sysPrompt }, ...aiHistory];
+      var success = false;
+      var finalError = null;
+      for (var attempt = 0; attempt < 2; attempt++) {
+        try {
+          var engine = await getLocalEngine(logFn);
+          var fullReply = await runGeneration(engine, messages, botBubble, logFn);
+          aiHistory.push({ role: "assistant", content: fullReply });
+          success = true;
+          break;
+        } catch (e) {
+          finalError = e;
+          var msg = e.message || String(e);
+          var isFatalWebGPU = /WebGPU is not available/i.test(msg) || /no compatible GPU adapter/i.test(msg) || /Unable to find a compatible GPU/i.test(msg) || /WebGPU device creation failed/i.test(msg);
+          var isRecoverable = !isFatalWebGPU && (/Object has already been disposed/i.test(msg) || /Model not loaded/i.test(msg) || /device lost/i.test(msg));
+          if (isRecoverable && attempt === 0) {
+            logFn('⚡ Engine lost detected. Resetting and retrying...');
+            await resetLocalEngine(logFn);
+            continue;
+          }
+          break;
         }
       }
-      
-      aiMinimal = false;
-      botBubble.dataset.retries = 0; botBubble.dataset.ovf = 0;
-      aiHistory.push({ role: "assistant", content: fullReply });
-
-    } catch (e) {
-      if (/Model not loaded/i.test(e.message || '') && (+botBubble.dataset.retries || 0) < 2) {
-        botBubble.dataset.retries = (+botBubble.dataset.retries || 0) + 1;
-        botBubble.textContent = '⚡ Engine stalled — force-reloading model... (' + botBubble.dataset.retries + '/2)';
-        chatLog.scrollTop = chatLog.scrollHeight;
-        try { if (mlcEngine && mlcEngine.reset) await mlcEngine.reset(); } catch (r1) {}
-        mlcEngine = null; aiLoading = false;
+      if (!success) {
         aiHistory.pop();
-        askLocalAI(question, botBubble);
-      } else if (/context|token|length|exceed/i.test(e.message || '') && !(+botBubble.dataset.ovf)) {
-        botBubble.dataset.ovf = 1;
-        aiMinimal = true;
-        aiHistory = aiHistory.slice(-2);
-        aiHistory.pop();
-        botBubble.textContent = '⚡ Context overflow — retrying with minimal memory...';
-        chatLog.scrollTop = chatLog.scrollHeight;
-        askLocalAI(question, botBubble);
-      } else {
-        botBubble.textContent = '✗ AI Error: ' + e.message;
+        botBubble.textContent = '✗ AI Error: ' + (finalError ? finalError.message : 'Unknown error');
       }
-    }
+    }).catch(function(e) {
+      botBubble.textContent = '✗ AI Error: ' + (e.message || e);
+    });
   }
 
   /* ---- PUSHBRIDGE CORE ENGINE ---- */
