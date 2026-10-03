@@ -523,78 +523,135 @@ enterDash();
     var q=String(question||'').trim();
     var lower=q.toLowerCase();
 
-    var cell=q.match(/^(?:type|put|enter|write|add)\s+(.+?)\s+(?:in|into)\s+(?:the\s+)?cell\s+([A-Z]{1,3}\d+)\s*$/i);
-    if(cell){
-      xlShowWorkspace();
-      if(xlSetCell(cell[2],cell[1].replace(/^["']|["']$/g,''))){
-        saveXlWorkspace();
-        if(botBubble)botBubble.textContent='✓ typed into '+cell[2]+' · saved to private Excel workspace';
-        return true;
-      }
+    function reply(msg){
+      saveXlWorkspace();
+      if(botBubble)botBubble.textContent=msg;
+      return true;
     }
 
-    var start=q.match(/^(?:type|put|enter|write|add)\s+(.+?)\s+(?:starting\s+at|starting\s+from)\s+([A-Z]{1,3}\d+)\s+(?:in|into)\s+(?:the\s+)?(?:spreadsheet|excel|sheet)\s*$/i);
-    if(start){
-      var values=xlParseValues(start[1]);
-      xlShowWorkspace();
-      var changed=xlSetRow(start[2],values);
-      if(changed){
-        saveXlWorkspace();
-        if(botBubble)botBubble.textContent='✓ typed '+changed+' value(s) starting at '+start[2]+' · saved to private Excel workspace';
-        return true;
-      }
+    function values(text){
+      return xlParseValues(
+        String(text||'')
+          .replace(/^\s*[:\-]\s*/,'')
+          .replace(/\s+(?:and|then)\s+/gi,',')
+          .trim()
+      );
     }
 
-    var col=q.match(/^(?:fill|put|enter|write|add)\s+(?:the\s+)?column\s+([A-Z]{1,3})(?:\s+(?:starting\s+at|from)\s+row\s+(\d+))?\s+(?:with|using)\s+(.+?)\s*$/i);
-    if(col){
-      var values2=xlParseValues(col[3]);
-      xlShowWorkspace();
-      var changed2=xlSetColumn(col[1],parseInt(col[2]||'1',10),values2);
-      if(changed2){
-        saveXlWorkspace();
-        if(botBubble)botBubble.textContent='✓ filled column '+col[1]+' with '+changed2+' value(s) · saved to private Excel workspace';
-        return true;
-      }
+    function clean(v){
+      return String(v==null?'':v)
+        .trim()
+        .replace(/^["'](.*)["']$/,'$1');
     }
 
-    var table=q.match(/^(?:create|make|put|paste|enter|write|add|fill)\s+(?:this\s+)?(?:table|data)\s+(?:in|into|on)\s+(?:the\s+)?(?:spreadsheet|excel|sheet)\s*:\s*([\s\S]+)$/i);
-    if(table){
-      var raw=table[1].trim();
-      var rows=raw.split(/\r?\n/).filter(function(v){return v.trim()!==''}).map(function(line){
-        return xlParseValues(line);
-      });
-      xlShowWorkspace();
-      var changed3=xlSetMatrix('A'+xlFirstEmptyRow(),rows);
-      if(changed3){
-        saveXlWorkspace();
-        if(botBubble)botBubble.textContent='✓ inserted '+changed3+' cell value(s) into the Excel workspace';
-        return true;
-      }
-    }
-
-    var simple=q.match(/^(?:type|put|enter|write|add)\s+(.+?)\s+(?:in|into|on)\s+(?:the\s+)?(?:spreadsheet|excel|sheet)\s*$/i);
-    if(simple){
-      var values3=xlParseValues(simple[1]);
-      xlShowWorkspace();
-      var target=xlFirstEmptyRow();
-      if(target){
-        var changed4=xlSetRow(target,values3);
-        if(changed4){
-          saveXlWorkspace();
-          if(botBubble)botBubble.textContent='✓ typed '+changed4+' value(s) into Excel row '+target+' · saved to private workspace';
-          return true;
-        }
-      }
-    }
-
-    if(/^(?:show|open)\s+(?:the\s+)?(?:spreadsheet|excel|sheet)\s*$/i.test(lower)){
+    var open=q.match(/^(?:open|show|display|view)\s+(?:the\s+)?(?:spreadsheet|excel|sheet|workbook)$/i);
+    if(open){
       xlShowWorkspace();
       if(botBubble)botBubble.textContent='✓ Excel workspace opened';
       return true;
     }
 
-    return false;
-  }
+    var cell=q.match(/^(?:type|put|enter|write|add|place|insert)\s+([\s\S]+?)\s+(?:in|into|inside|on)\s+(?:the\s+)?cell\s+([A-Z]{1,3}\d+)\s*$/i);
+    if(cell){
+      xlShowWorkspace();
+      return xlSetCell(cell[2],clean(cell[1]))&&reply('✓ placed value in '+cell[2]+' · saved to private Excel workspace');
+    }
+
+    var range=q.match(/^(?:fill|put|enter|write|add)\s+([\s\S]+?)\s+(?:in|into|across|through)\s+(?:the\s+)?range\s+([A-Z]{1,3}\d+)\s*(?:to|through|-)\s*([A-Z]{1,3}\d+)\s*$/i);
+    if(range){
+      var a=xlCellPosition(range[2]),b=xlCellPosition(range[3]);
+      var rv=values(range[1]);
+      if(a&&b&&rv.length){
+        xlShowWorkspace();
+        var n=0,ri=0;
+        for(var rr=a.row;rr<=b.row;rr++){
+          for(var cc=a.col;cc<=b.col;cc++){
+            var ref=String.fromCharCode(65+cc)+rr;
+            var value=rv[ri%rv.length];
+            if(xlSetCell(ref,value))n++;
+            ri++;
+          }
+        }
+        if(n)return reply('✓ filled '+n+' cell(s) in '+range[2]+':'+range[3]+' · saved to private Excel workspace');
+      }
+    }
+
+    var start=q.match(/^(?:type|put|enter|write|add|paste)\s+([\s\S]+?)\s+(?:starting\s+at|starting\s+from)\s+([A-Z]{1,3}\d+)\s+(?:in|into|on)\s+(?:the\s+)?(?:spreadsheet|excel|sheet)\s*$/i);
+    if(start){
+      var sv=values(start[1]);
+      xlShowWorkspace();
+      var sc=xlSetRow(start[2],sv);
+      if(sc)return reply('✓ inserted '+sc+' value(s) starting at '+start[2]+' · saved to private Excel workspace');
+    }
+
+    var byHeader=q.match(/^(?:fill|put|enter|write|add)\s+(?:the\s+)?(?:column\s+)?["']?([^"':]+)["']?\s+(?:with|using)\s+([\s\S]+?)\s+(?:in|into|on)\s+(?:the\s+)?(?:spreadsheet|excel|sheet)\s*$/i);
+    if(byHeader){
+      xlShowWorkspace();
+      var header=byHeader[1].trim().toLowerCase(),tbl=$('#xl-grid');
+      var headerCol=0;
+      for(var hc=1;hc<tbl.rows[1].cells.length;hc++){
+        if((tbl.rows[1].cells[hc].textContent||'').trim().toLowerCase()===header){
+          headerCol=hc;
+          break;
+        }
+      }
+      if(headerCol){
+        var hv=values(byHeader[2]),hn=0;
+        for(var hi=0;hi<hv.length && hi+2<=50;hi++){
+          var href=String.fromCharCode(64+headerCol)+(hi+2);
+          if(xlSetCell(href,clean(hv[hi])))hn++;
+        }
+        if(hn)return reply('✓ filled column "'+byHeader[1].trim()+'" with '+hn+' value(s) · saved to private Excel workspace');
+      }
+    }
+
+    var col=q.match(/^(?:fill|put|enter|write|add)\s+(?:the\s+)?column\s+([A-Z]{1,3})(?:\s+(?:starting\s+at|from)\s+row\s+(\d+))?\s+(?:with|using)\s+([\s\S]+?)\s*$/i);
+    if(col){
+      var cv=values(col[3]);
+      xlShowWorkspace();
+      var cn=xlSetColumn(col[1],parseInt(col[2]||'1',10),cv);
+      if(cn)return reply('✓ filled column '+col[1]+' with '+cn+' value(s) · saved to private Excel workspace');
+    }
+
+    var headerSet=q.match(/^(?:set|make|create)\s+(?:the\s+)?headers?\s+(?:to|as)\s+([\s\S]+?)\s*(?:in|into|on)\s+(?:the\s+)?(?:spreadsheet|excel|sheet)?$/i);
+    if(headerSet){
+      var hh=values(headerSet[1]);
+      xlShowWorkspace();
+      var hcount=xlSetRow(1,hh);
+      if(hcount)return reply('✓ set '+hcount+' spreadsheet header(s) · saved to private Excel workspace');
+    }
+
+    var explicitRow=q.match(/^(?:put|enter|write|add|fill)\s+row\s+(\d+)\s*(?:with|as|:)\s*([\s\S]+?)\s*$/i);
+    if(explicitRow){
+      var ev=values(explicitRow[2]);
+      xlShowWorkspace();
+      var ec=xlSetRow(explicitRow[1],ev);
+      if(ec)return reply('✓ filled row '+explicitRow[1]+' with '+ec+' value(s) · saved to private Excel workspace');
+    }
+
+    var nextRow=q.match(/^(?:add|append|insert|put|enter|write|paste)\s+(?:a\s+)?(?:new\s+)?row\s*(?:with|as|:)\s*([\s\S]+?)\s*(?:to|into|in|on)\s+(?:the\s+)?(?:spreadsheet|excel|sheet)\s*$/i);
+    if(nextRow){
+      var nr=xlFirstEmptyRow();
+      if(nr){
+        var nv=values(nextRow[1]),nc=xlSetRow(nr,nv);
+        if(nc)return reply('✓ added row '+nr+' with '+nc+' value(s) · saved to private Excel workspace');
+      }
+    }
+
+    var table=q.match(/^(?:create|make|put|paste|enter|write|add|fill)\s+(?:this\s+)?(?:table|data|rows?)\s+(?:in|into|on)\s+(?:the\s+)?(?:spreadsheet|excel|sheet)\s*:\s*([\s\S]+)$/i);
+    if(table){
+      var raw=table[1].trim();
+      var rows=raw.split(/\r?\n/)
+        .filter(function(v){return v.trim()!==''})
+        .map(function(line){return values(line)});
+      xlShowWorkspace();
+      var tr=xlFirstEmptyRow();
+      var tc=tr?xlSetMatrix('A'+tr,rows):0;
+      if(tc)return reply('✓ inserted '+tc+' cell value(s) into the Excel workspace · saved privately');
+    }
+
+    var clear=q.match(/^(?:clear|erase|empty|delete)\s+(?:the\s+)?(?:contents?\s+of\s+)?(?:cell\s+)?([A-Z]{1,3}\d+)\s*(?:to|through|-)\s*(
+```
 
   function xlCellPosition(ref){
     var m=String(ref||'').trim().toUpperCase().match(/^([A-Z]{1,3})(\d+)$/);
