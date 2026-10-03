@@ -1308,6 +1308,7 @@ enterDash();
 
   /* ---- ON-DEVICE AI (QWEN 2.5 1.5B via WebLLM) ---- */
   var mlcEngine = null;
+  var mlcWorker = null;
   var engineState = 'null';
   var engineInitPromise = null;
   var generationQueue = Promise.resolve();
@@ -1330,25 +1331,36 @@ enterDash();
     return null;
   }
   async function resetLocalEngine(logFn) {
-    if (logFn) logFn('⚡ Resetting AI engine...');
+    if (logFn) logFn('⚡ Resetting AI worker...');
     var oldEngine = mlcEngine;
+    var oldWorker = mlcWorker;
+
     mlcEngine = null;
+    mlcWorker = null;
     engineState = 'null';
     engineInitPromise = null;
+
     if (oldEngine) {
       try {
         if (typeof oldEngine.unload === 'function') await oldEngine.unload();
-        else if (typeof oldEngine.dispose === 'function') oldEngine.dispose();
+        else if (typeof oldEngine.dispose === 'function') await oldEngine.dispose();
       } catch (e) {}
+    }
+
+    if (oldWorker) {
+      try { oldWorker.terminate(); } catch (e) {}
     }
   }
   async function getLocalEngine(logFn) {
     if (engineState === 'ready' && mlcEngine) return mlcEngine;
     if (engineState === 'loading' && engineInitPromise) return engineInitPromise;
+
     engineState = 'loading';
+
     engineInitPromise = (async () => {
       try {
         logFn('🔍 Checking WebGPU capabilities...');
+
         if (!navigator.gpu) {
           throw new Error('WEBGPU_UNAVAILABLE');
         }
@@ -1362,21 +1374,17 @@ enterDash();
         try {
           logFn('🔎 Trying high-performance GPU adapter...');
           adapter = await navigator.gpu.requestAdapter({powerPreference:'high-performance'});
-          if (adapter) {
-            adapterMode = 'high-performance';
-          }
-        } catch (e) {
+          if (adapter) adapterMode='high-performance';
+        } catch(e) {
           adapterErrors.push('high-performance: '+(e.message||String(e)));
         }
 
         if (!adapter) {
           try {
-            logFn('🔎 High-performance adapter unavailable — trying default adapter...');
+            logFn('🔎 Trying default GPU adapter...');
             adapter = await navigator.gpu.requestAdapter();
-            if (adapter) {
-              adapterMode = 'default';
-            }
-          } catch (e) {
+            if (adapter) adapterMode='default';
+          } catch(e) {
             adapterErrors.push('default: '+(e.message||String(e)));
           }
         }
@@ -1391,59 +1399,127 @@ enterDash();
         var adapterInfo='';
         try {
           var info=adapter.info||{};
-          var parts=[info.vendor,info.architecture,info.device,info.description].filter(function(v){return v});
+          var parts=[
+            info.vendor,
+            info.architecture,
+            info.device,
+            info.description
+          ].filter(function(v){return v});
           if(parts.length)adapterInfo=' · '+parts.join(' / ');
-        } catch(e){}
+        }catch(e){}
 
-        logFn('✓ Compatible GPU adapter found: '+adapterMode+adapterInfo);
+        logFn('✓ GPU adapter available: '+adapterMode+adapterInfo);
 
-        logFn('⚡ Importing WebLLM engine...');
-        const webllm = await import("https://esm.run/@mlc-ai/web-llm@0.2.82");
-        const picked = resolveModelId(webllm);
-        const candidates = picked ? [picked].concat(MODEL_FALLBACK.filter(function(m){return m!==picked})) : MODEL_FALLBACK;
-        const initProgressCallback = (report) => {
-          if (report.text) logFn('⚡ ' + report.text);
+        logFn('⚡ Starting WebLLM worker...');
+
+        const webllm = await import(
+          "https://esm.run/@mlc-ai/web-llm@0.2.82"
+        );
+
+        const picked=resolveModelId(webllm);
+        const candidates=picked
+          ? [picked].concat(
+              MODEL_FALLBACK.filter(function(m){return m!==picked})
+            )
+          : MODEL_FALLBACK;
+
+        const initProgressCallback=(report)=>{
+          if(report&&report.text)logFn('⚡ '+report.text);
         };
+
         var lastErr=null;
-        for (var k=0;k<candidates.length;k++){
-          try {
-            logFn('⚡ Loading on-device model: ' + candidates[k] + ' (cached after first download)...');
-            mlcEngine = await webllm.CreateMLCEngine(candidates[k], { initProgressCallback: initProgressCallback });
-            chosenModel = candidates[k];
-            logFn('✓ Device creation succeeded: yes');
-            logFn('🧠 Selected model: ' + chosenModel);
+
+        for(var k=0;k<candidates.length;k++){
+          var worker=null;
+
+          try{
+            logFn('⚡ Starting AI worker...');
+
+            worker=new Worker(
+              'webllm-worker.js?v=r1',
+              {type:'module'}
+            );
+
+            logFn('⚡ Loading model in worker: '+candidates[k]);
+
+            var engine=await webllm.CreateWebWorkerMLCEngine(
+              worker,
+              candidates[k],
+              {initProgressCallback:initProgressCallback}
+            );
+
+            mlcWorker=worker;
+            mlcEngine=engine;
+            chosenModel=candidates[k];
+
+            logFn('✓ AI worker ready');
+            logFn('🧠 Selected model: '+chosenModel);
+
             break;
-          } catch (err) {
-            var msg = err.message || String(err);
-            if (/Unable to find a compatible GPU/i.test(msg) || /No compatible GPU/i.test(msg) || /Failed to request device/i.test(msg)) {
+          }catch(err){
+            lastErr=err;
+
+            if(worker){
+              try{worker.terminate()}catch(e){}
+            }
+
+            var msg=err.message||String(err);
+
+            if(
+              /Unable to find a compatible GPU/i.test(msg) ||
+              /No compatible GPU/i.test(msg) ||
+              /Failed to request device/i.test(msg) ||
+              /D3D12/i.test(msg) ||
+              /DXGI_ERROR_DEVICE_REMOVED/i.test(msg)
+            ){
               throw new Error('WEBGPU_DEVICE_FAILED');
             }
-            lastErr=err;
-            if (/Cannot find model record/i.test(msg)) continue;
+
+            if(/Cannot find model record/i.test(msg)){
+              continue;
+            }
+
             throw err;
           }
         }
-        if (!mlcEngine) throw lastErr || new Error('no usable on-device model in this WebLLM build');
-        engineState = 'ready';
-        return mlcEngine;
-      } catch (err) {
-        engineState = 'failed';
-        mlcEngine = null;
-        var msg = err.message || String(err);
-        var userMsg = '';
-        if (msg === 'WEBGPU_UNAVAILABLE') {
-          userMsg = 'WebGPU is not available in this browser. Local AI requires a browser with WebGPU support.';
-        } else if (msg === 'WEBGPU_ADAPTER_FAILED' || msg === 'WEBGPU_NO_ADAPTER') {
-          userMsg = 'WebGPU is available but no compatible GPU adapter could be initialized. Please enable hardware acceleration.';
-        } else if (msg === 'WEBGPU_DEVICE_FAILED') {
-          userMsg = 'Unable to find a compatible GPU. WebGPU device creation failed. Ensure hardware acceleration is enabled.';
-        } else {
-          userMsg = 'AI Engine failed: ' + msg;
+
+        if(!mlcEngine){
+          throw lastErr||new Error(
+            'no usable on-device model in this WebLLM build'
+          );
         }
-        logFn('✗ ' + userMsg);
+
+        engineState='ready';
+        return mlcEngine;
+
+      }catch(err){
+        engineState='failed';
+        mlcEngine=null;
+
+        var msg=err.message||String(err);
+        var userMsg='';
+
+        if(msg==='WEBGPU_UNAVAILABLE'){
+          userMsg=
+            'WebGPU is not available in this browser. Local AI requires a browser with WebGPU support.';
+        }else if(
+          msg==='WEBGPU_ADAPTER_FAILED' ||
+          msg==='WEBGPU_NO_ADAPTER'
+        ){
+          userMsg=
+            'WebGPU is available but no compatible GPU adapter could be initialized. Please enable hardware acceleration.';
+        }else if(msg==='WEBGPU_DEVICE_FAILED'){
+          userMsg=
+            'WebGPU device creation failed. The browser/GPU driver rejected the AI device.';
+        }else{
+          userMsg='AI Engine failed: '+msg;
+        }
+
+        logFn('✗ '+userMsg);
         throw new Error(userMsg);
       }
     })();
+
     return engineInitPromise;
   }
   function showThinking(b){
