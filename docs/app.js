@@ -586,13 +586,33 @@ enterDash();
     try {
       var engine = await getLocalEngine(logFn);
       
-      // Build context from the repo tree so the AI knows the project structure
-      var sysPrompt = "You are PushBridge AI, an expert coding assistant running locally in the browser. The user is working on a GitHub repository. Here is the current file structure of their project:\n";
-      if (lastTree && lastTree.length > 0) {
-        var files = lastTree.filter(function(e){return e.type==='blob'}).map(function(e){return e.path}).slice(0, 100);
-        sysPrompt += files.join("\n") + "\n\n";
+      var sysPrompt = "You are PushBridge AI, an expert coding assistant running locally in the browser. The user is working on a GitHub repository.\nFile structure:\n";
+      var blobs = (lastTree || []).filter(function(e){return e.type==='blob' && SEARCH_EXT.test(e.path) && e.size <= 100000});
+      if (blobs.length > 0) {
+        sysPrompt += blobs.map(function(e){return e.path}).slice(0, 120).join("\n") + "\n\n";
       }
-      sysPrompt += "Answer the user's questions about their code concisely. If they ask you to write or fix code, provide the raw code blocks.";
+      var terms = (question.toLowerCase().match(/[a-z0-9_]{3,}/g) || []).filter(function(v,i,a){return a.indexOf(v)===i}).slice(0, 5);
+      var scored = [];
+      for (var i = 0; i < Math.min(blobs.length, 25); i++) {
+        var content = "";
+        try { content = await getFileContent(blobs[i].path); } catch(e) { continue; }
+        var lc = content.toLowerCase();
+        var score = 0;
+        if (blobs[i].path.toLowerCase().indexOf("readme") >= 0) score += 5;
+        terms.forEach(function(t) {
+          if (blobs[i].path.toLowerCase().indexOf(t) >= 0) score += 3;
+          if (lc.indexOf(t) >= 0) score += 1;
+        });
+        if (score > 0) scored.push({path: blobs[i].path, score: score, content: content});
+      }
+      scored.sort(function(a,b){return b.score - a.score});
+      if (scored.length > 0) {
+        sysPrompt += "Most relevant file contents:\n";
+        scored.slice(0, 2).forEach(function(f) {
+          sysPrompt += "\n=== " + f.path + " ===\n" + f.content.slice(0, 2000) + "\n";
+        });
+      }
+      sysPrompt += "\nAnswer the user's questions about their code concisely using the provided file contents. If they ask you to write or fix code, provide the raw code blocks.";
 
       aiHistory.push({ role: "user", content: question });
       // Keep history manageable for the 1.5B model's context window
