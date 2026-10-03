@@ -417,17 +417,28 @@ enterDash();
   }
   if(dXl)dXl.onclick=function(){buildXl();var o=$('#xl-overlay');if(o)o.classList.remove('hidden')};
   var xlClose=$('#xl-close');if(xlClose)xlClose.onclick=function(){var o=$('#xl-overlay');if(o)o.classList.add('hidden')};
+  var xlName=$('#xl-name');
+  if(xlName)xlName.addEventListener('input',function(){scheduleXlWorkspaceSave()});
+
   var xlSave=$('#xl-save');
   if(xlSave)xlSave.onclick=function(){
+    saveXlWorkspace();
+    $('#xl-status').textContent='✓ spreadsheet saved to private workspace · not committed to GitHub';
+  };
+
+  var xlCommit=$('#xl-commit');
+  if(xlCommit)xlCommit.onclick=function(){
     var name=($('#xl-name').value||'').trim()||'sheet1.csv';
     if(!/\.csv$/i.test(name))name+='.csv';
-    xlSave.disabled=true;$('#xl-status').textContent='committing…';
+    saveXlWorkspace();
+    xlCommit.disabled=true;
+    $('#xl-status').textContent='committing explicitly to GitHub…';
     commitEntries([{path:name,content:xlCSV()}],'PushBridge: excel '+name).then(function(cm){
-      $('#xl-status').textContent='✓ committed '+cm.sha.slice(0,7)+' → /'+name;
+      $('#xl-status').textContent='✓ explicitly committed '+cm.sha.slice(0,7)+' → /'+name;
       dockChat();
-      var b=document.createElement('div');b.className='msg bot';b.textContent='✓ spreadsheet pushed → /'+name+' · commit '+cm.sha.slice(0,7);chatLog.appendChild(b);chatLog.scrollTop=chatLog.scrollHeight;
+      var b=document.createElement('div');b.className='msg bot';b.textContent='✓ spreadsheet explicitly pushed → /'+name+' · commit '+cm.sha.slice(0,7);chatLog.appendChild(b);chatLog.scrollTop=chatLog.scrollHeight;
       loadTree();
-    }).catch(function(e){$('#xl-status').textContent='✗ '+e.message}).finally(function(){xlSave.disabled=false});
+    }).catch(function(e){$('#xl-status').textContent='✗ '+e.message}).finally(function(){xlCommit.disabled=false});
   };
 
   /* ---- DOWNLOADS: ZIP + MD (cached, always warm) ---- */
