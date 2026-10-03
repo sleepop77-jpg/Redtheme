@@ -801,6 +801,10 @@ enterDash();
         try {
           var engine = await getLocalEngine(logFn);
           var fullReply = await runGeneration(engine, messages, botBubble, logFn);
+          var excelActionResult=applyAIExcelActions(fullReply);
+          if(excelActionResult.count){
+            logFn(fullReply + "\n\n✓ Excel workspace updated: "+excelActionResult.count+" cell change(s)");
+          }
           aiHistory.push({ role: "assistant", content: fullReply });
           success = true;
           break;
