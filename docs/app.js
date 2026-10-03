@@ -1211,7 +1211,7 @@ enterDash();
         logFn('✓ Compatible GPU adapter found: '+adapterMode+adapterInfo);
 
         logFn('⚡ Importing WebLLM engine...');
-        const webllm = await import("https://esm.run/@mlc-ai/web-llm");
+        const webllm = await import("https://esm.run/@mlc-ai/web-llm@0.2.82");
         const picked = resolveModelId(webllm);
         const candidates = picked ? [picked].concat(MODEL_FALLBACK.filter(function(m){return m!==picked})) : MODEL_FALLBACK;
         const initProgressCallback = (report) => {
