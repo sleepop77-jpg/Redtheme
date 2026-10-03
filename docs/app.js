@@ -485,8 +485,9 @@ enterDash();
   }
 
   function applyAIExcelActions(reply){
-    var text=String(reply||'');
-    var match=text.match(/===PUSHBRIDGE-EXCEL===\s*v1\s*([\s\S]*?)(?:\nEND\s*$|\n---END---\s*$)/i);
+    var text=String(reply||'').replace(/\r\n/g,'\n');
+
+    var match=text.match(/===PUSHBRIDGE-EXCEL===\s*(?:v1\s*)?([\s\S]*?)(?:\n\s*END\s*$|\s+END\s*$|\n\s*---END---\s*$)/i);
     if(!match)return {count:0};
 
     buildXl();
@@ -494,7 +495,8 @@ enterDash();
     var overlay=$('#xl-overlay');
     if(overlay)overlay.classList.remove('hidden');
 
-    var lines=match[1].split(/\r?\n/);
+    var body=match[1].replace(/^\s+|\s+$/g,'');
+    var lines=body.split('\n');
     var count=0;
 
     for(var i=0;i<lines.length;i++){
@@ -530,7 +532,9 @@ enterDash();
             break;
           }
         }
-        if(target)count+=xlSetRow(target,append[1].split('|').map(function(v){return v.trim()}));
+        if(target){
+          count+=xlSetRow(target,append[1].split('|').map(function(v){return v.trim()}));
+        }
         continue;
       }
 
