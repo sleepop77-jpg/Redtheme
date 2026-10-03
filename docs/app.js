@@ -141,7 +141,6 @@ enterDash();
     var tn=$('#tb-name');if(tn)tn.textContent=state.repo?state.repo.full_name:'—';
     loadTree();
     show('dash');
-    restorePushLoops();
   }
   var segs=document.querySelectorAll('.seg-btn');
   segs.forEach(function(s){s.addEventListener('click',function(){
@@ -152,366 +151,6 @@ enterDash();
     document.querySelectorAll('#dash-canvas [data-seg]').forEach(function(el){el.classList.toggle('hidden',el.dataset.seg!==s.dataset.seg)});
   })});
   var sendBtn=$('#chat-send'),chatIn=$('#chat-input'),chatLog=$('#chat-log');
-
-  /* ---- RECURRING EXCEL LOOPS ---- */
-  var pushLoops=[];
-  var pushLoopTimers={};
-  var pushLoopKey='pb_excel_loops';
-
-  function loadPushLoops(){
-    try{
-      var raw=JSON.parse(localStorage.getItem(pushLoopKey)||'[]');
-      pushLoops=Array.isArray(raw)?raw:[];
-    }catch(e){
-      pushLoops=[];
-    }
-  }
-
-  function savePushLoops(){
-    try{
-      localStorage.setItem(pushLoopKey,JSON.stringify(pushLoops));
-    }catch(e){}
-  }
-
-  function parseLoopDuration(text){
-    var m=String(text||'').trim().toLowerCase().match(/^(\d+(?:\.\d+)?)\s*(s|sec|secs|second|seconds|m|min|mins|minute|minutes|h|hr|hrs|hour|hours|d|day|days)$/);
-    if(!m)return 0;
-    var n=parseFloat(m[1]);
-    var unit=m[2];
-    if(/^s/.test(unit))return n*1000;
-    if(/^m/.test(unit))return n*60000;
-    if(/^h/.test(unit))return n*3600000;
-    if(/^d/.test(unit))return n*86400000;
-    return 0;
-  }
-
-  function formatLoopDuration(ms){
-    if(ms%86400000===0)return(ms/86400000)+'d';
-    if(ms%3600000===0)return(ms/3600000)+'h';
-    if(ms%60000===0)return(ms/60000)+'m';
-    return(ms/1000)+'s';
-  }
-
-  function loopBubble(message){
-    if(!chatLog)return null;
-    chatLog.classList.remove('hidden');
-    dockChat();
-    var b=document.createElement('div');
-    b.className='msg bot';
-    b.textContent=message;
-    chatLog.appendChild(b);
-    chatLog.scrollTop=chatLog.scrollHeight;
-    return b;
-  }
-
-  function loopRepoKey(){
-    return state.repo ? state.repo.full_name+'@'+state.repo.branch : '';
-  }
-
-  async function runCommitExcelLoop(loop){
-    if(!state.repo)throw new Error('No GitHub repository is selected');
-
-    var repoKey=loopRepoKey();
-    var url='/repos/'+state.repo.full_name+'/commits?sha='+encodeURIComponent(state.repo.branch)+'&per_page=30';
-    var response=await apiGet(url);
-    var commits=Array.isArray(response.json)?response.json:[];
-
-    if(!commits.length)return{added:0,message:'No commits found'};
-
-    buildXl();
-
-    var tbl=$('#xl-grid');
-    var sheetEmpty=xlFirstEmptyRow()===1;
-
-    if(sheetEmpty){
-      xlSetRow(1,[
-        'Checked At',
-        'Commit Time',
-        'Commit',
-        'Author',
-        'Message',
-        'URL'
-      ]);
-    }
-
-    var stateKey='pb_loop_seen_'+repoKey;
-    var seen=[];
-    try{seen=JSON.parse(localStorage.getItem(stateKey)||'[]')}catch(e){seen=[]}
-    if(!Array.isArray(seen))seen=[];
-
-    var isFirstRun=seen.length===0;
-    var fresh=[];
-
-    for(var i=0;i<commits.length;i++){
-      if(seen.indexOf(commits[i].sha)<0)fresh.push(commits[i]);
-    }
-
-    /*
-      First run: record the latest commit only.
-      Later runs: record every unseen commit, oldest → newest.
-    */
-    if(isFirstRun)fresh=commits.slice(0,1);
-    else fresh=fresh.reverse();
-
-    var added=0;
-    var checkedAt=new Date().toLocaleString();
-
-    for(var j=0;j<fresh.length;j++){
-      var c=fresh[j];
-      var target=xlFirstEmptyRow();
-      if(!target)break;
-
-      var commitTime='';
-      if(c.commit&&c.commit.author&&c.commit.author.date){
-        commitTime=new Date(c.commit.author.date).toLocaleString();
-      }
-
-      var author='Unknown';
-      if(c.author&&c.author.login)author=c.author.login;
-      else if(c.commit&&c.commit.author&&c.commit.author.name)author=c.commit.author.name;
-
-      var message=((c.commit&&c.commit.message)||'').split('\n')[0].trim();
-
-      added+=xlSetRow(target,[
-        checkedAt,
-        commitTime,
-        String(c.sha||'').slice(0,7),
-        author,
-        message,
-        c.html_url||''
-      ]);
-    }
-
-    var mergedSeen=seen.slice();
-
-    commits.forEach(function(c){
-      if(mergedSeen.indexOf(c.sha)<0)mergedSeen.push(c.sha);
-    });
-
-    mergedSeen=mergedSeen.slice(-100);
-    try{localStorage.setItem(stateKey,JSON.stringify(mergedSeen))}catch(e){}
-    saveXlWorkspace();
-
-    return{
-      added:added,
-      message:added
-        ? '✓ '+added+' new commit(s) logged to Excel'
-        : '✓ checked commits · no new commits'
-    };
-  }
-
-  async function runPushLoop(loop){
-    var task=String(loop.task||'').trim();
-    var lower=task.toLowerCase();
-
-    /*
-      Deterministic Excel automations run without Qwen.
-      This prevents a small local model from accidentally dropping data.
-    */
-    if(
-      /commit/.test(lower) &&
-      /excel|spreadsheet|sheet/.test(lower)
-    ){
-      return await runCommitExcelLoop(loop);
-    }
-
-    /*
-      Other recurring Excel instructions can still be handed to the
-      local AI and can use the same private workspace/action parser.
-    */
-    var b=loopBubble('⟳ running loop · '+task);
-    await askLocalAI(task,b);
-    return{added:0,message:'AI loop executed'};
-  }
-
-  function schedulePushLoop(loop,immediate){
-    if(pushLoopTimers[loop.id])clearTimeout(pushLoopTimers[loop.id]);
-
-    var delay=immediate?0:Math.max(1000,loop.interval);
-
-    pushLoopTimers[loop.id]=setTimeout(async function(){
-      delete pushLoopTimers[loop.id];
-
-      var stillActive=pushLoops.some(function(x){return x.id===loop.id});
-      if(!stillActive)return;
-
-      try{
-        var result=await runPushLoop(loop);
-        var stamp=new Date().toLocaleTimeString();
-        loop.lastRun=Date.now();
-        loop.lastResult=result&&result.message?result.message:'✓ completed';
-
-        savePushLoops();
-
-        var b=loopBubble(
-          '⟳ '+formatLoopDuration(loop.interval)+
-          ' loop · '+stamp+' · '+loop.task+
-          '\n'+loop.lastResult
-        );
-        if(b)chatLog.scrollTop=chatLog.scrollHeight;
-      }catch(e){
-        loop.lastRun=Date.now();
-        loop.lastResult='✗ '+(e.message||String(e));
-        savePushLoops();
-        loopBubble(
-          '⟳ loop error · '+(e.message||String(e))+
-          '\nNext run: '+formatLoopDuration(loop.interval)
-        );
-      }
-
-      schedulePushLoop(loop,false);
-    },delay);
-  }
-
-  function stopPushLoop(id){
-    var idx=-1;
-
-    if(String(id).toLowerCase()==='all'){
-      pushLoops.forEach(function(loop){
-        if(pushLoopTimers[loop.id])clearTimeout(pushLoopTimers[loop.id]);
-      });
-      pushLoops=[];
-      savePushLoops();
-      return true;
-    }
-
-    idx=pushLoops.findIndex(function(loop,n){
-      return String(n+1)===String(id)||String(loop.id)===String(id);
-    });
-
-    if(idx<0)return false;
-
-    var loop=pushLoops[idx];
-    if(pushLoopTimers[loop.id])clearTimeout(pushLoopTimers[loop.id]);
-    delete pushLoopTimers[loop.id];
-    pushLoops.splice(idx,1);
-    savePushLoops();
-    return true;
-  }
-
-  function listPushLoops(){
-    loadPushLoops();
-    var active=pushLoops.filter(function(loop){
-      return !state.repo||loop.repo===loopRepoKey();
-    });
-
-    if(!active.length){
-      loopBubble('⟳ No active loops for this repository.');
-      return true;
-    }
-
-    var out=['⟳ Active Excel loops:'];
-
-    active.forEach(function(loop,i){
-      var last=loop.lastRun
-        ? new Date(loop.lastRun).toLocaleString()
-        : 'not run yet';
-
-      out.push(
-        (i+1)+'. every '+formatLoopDuration(loop.interval)+
-        ' · '+loop.task+
-        ' · last: '+last
-      );
-    });
-
-    loopBubble(out.join('\n'));
-    return true;
-  }
-
-  function restorePushLoops(){
-    loadPushLoops();
-
-    Object.keys(pushLoopTimers).forEach(function(id){
-      clearTimeout(pushLoopTimers[id]);
-      delete pushLoopTimers[id];
-    });
-
-    if(!state.repo)return;
-
-    pushLoops.forEach(function(loop){
-      if(loop.repo===loopRepoKey()){
-        schedulePushLoop(loop,false);
-      }
-    });
-  }
-
-  function handleLoopCommand(text){
-    var q=String(text||'').trim();
-
-    if(/^\/loop\s+(?:list|ls)$/i.test(q)){
-      listPushLoops();
-      return true;
-    }
-
-    var stop=q.match(/^\/loop\s+(?:off|stop|cancel)\s+(all|\d+)$/i);
-    if(stop){
-      if(stopPushLoop(stop[1])){
-        loopBubble('✓ loop '+stop[1]+' stopped');
-      }else{
-        loopBubble('✗ loop not found: '+stop[1]);
-      }
-      return true;
-    }
-
-    var create=q.match(/^\/loop\s+([0-9]+(?:\.[0-9]+)?\s*(?:s|sec|secs|second|seconds|m|min|mins|minute|minutes|h|hr|hrs|hour|hours|d|day|days))\s+([\s\S]+)$/i);
-
-    if(create){
-      if(!state.repo){
-        loopBubble('✗ Select a GitHub repository before creating a loop.');
-        return true;
-      }
-
-      var interval=parseLoopDuration(create[1]);
-      var task=create[2].trim();
-
-      if(!interval||!task){
-        loopBubble('✗ Invalid loop. Example: /loop 5m check for commits and paste them in Excel with the time');
-        return true;
-      }
-
-      if(interval<10000){
-        loopBubble('✗ Minimum loop interval is 10 seconds.');
-        return true;
-      }
-
-      var loop={
-        id:Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,7),
-        interval:interval,
-        task:task,
-        repo:loopRepoKey(),
-        createdAt:Date.now(),
-        lastRun:0,
-        lastResult:''
-      };
-
-      pushLoops.push(loop);
-      savePushLoops();
-
-      loopBubble(
-        '✓ loop created · every '+formatLoopDuration(interval)+
-        '\nTask: '+task+
-        '\nFirst run: now'
-      );
-
-      schedulePushLoop(loop,true);
-      return true;
-    }
-
-    if(/^\/loop\b/i.test(q)){
-      loopBubble(
-        'Loop usage:\n'+
-        '/loop 5m check for commits and paste them in Excel with the time\n'+
-        '/loop 30m put a timestamp in Excel\n'+
-        '/loop list\n'+
-        '/loop off 1\n'+
-        '/loop off all'
-      );
-      return true;
-    }
-
-    return false;
-  }
-
   function dockChat(){var c=document.getElementById('dash-canvas');if(c)c.classList.add('docked')}
   function setIdleBrand(show){
     var el=$('#idle-brand');if(!el)return;
@@ -527,18 +166,14 @@ enterDash();
     var t=chatIn.value.trim();
     if(!t){chatIn.style.borderColor='var(--error)';setTimeout(function(){chatIn.style.borderColor=''},450);chatIn.focus();return}
     dockChat();setIdleBrand(false);
-
-    if(handleLoopCommand(t)){
-      chatIn.value='';
-      armSend();
-      chatIn.focus();
-      return;
-    }
-
     if(/===\s*(PUSHBRIDGE|VIBEBRIDGE)\s*===/i.test(t)){chatIn.value='';armSend();pushPipeline(t);return}
     chatLog.classList.remove('hidden');
     var u=document.createElement('div');u.className='msg user';u.textContent=t;chatLog.appendChild(u);
-    var b=document.createElement('div')
+    var b=document.createElement('div');b.className='msg bot';b.textContent='⚡ Waking up on-device AI...';chatLog.appendChild(b);
+    chatLog.scrollTop=chatLog.scrollHeight;
+    chatIn.value='';armSend();chatIn.focus();
+    askLocalAI(t, b);
+  }
   if(sendBtn)sendBtn.addEventListener('click',sendChat);
   function armSend(){if(sendBtn&&chatIn)sendBtn.classList.toggle('armed',chatIn.value.trim().length>0)}
   if(chatIn)chatIn.addEventListener('input',function(){armSend();updateIdle()});
@@ -888,164 +523,74 @@ enterDash();
     var q=String(question||'').trim();
     var lower=q.toLowerCase();
 
-    function reply(msg){
-      saveXlWorkspace();
-      if(botBubble)botBubble.textContent=msg;
-      return true;
-    }
-
-    function values(text){
-      return xlParseValues(
-        String(text||'')
-          .replace(/^\s*[:\-]\s*/,'')
-          .replace(/\s+(?:and|then)\s+/gi,',')
-          .trim()
-      );
-    }
-
-    function clean(v){
-      return String(v==null?'':v)
-        .trim()
-        .replace(/^["'](.*)["']$/,'$1');
-    }
-
-    var open=q.match(/^(?:open|show|display|view)\s+(?:the\s+)?(?:spreadsheet|excel|sheet|workbook)$/i);
-    if(open){
-      xlShowWorkspace();
-      if(botBubble)botBubble.textContent='✓ Excel workspace opened';
-      return true;
-    }
-
-    var cell=q.match(/^(?:type|put|enter|write|add|place|insert)\s+([\s\S]+?)\s+(?:in|into|inside|on)\s+(?:the\s+)?cell\s+([A-Z]{1,3}\d+)\s*$/i);
+    var cell=q.match(/^(?:type|put|enter|write|add)\s+(.+?)\s+(?:in|into)\s+(?:the\s+)?cell\s+([A-Z]{1,3}\d+)\s*$/i);
     if(cell){
       xlShowWorkspace();
-      return xlSetCell(cell[2],clean(cell[1]))&&reply('✓ placed value in '+cell[2]+' · saved to private Excel workspace');
-    }
-
-    var range=q.match(/^(?:fill|put|enter|write|add)\s+([\s\S]+?)\s+(?:in|into|across|through)\s+(?:the\s+)?range\s+([A-Z]{1,3}\d+)\s*(?:to|through|-)\s*([A-Z]{1,3}\d+)\s*$/i);
-    if(range){
-      var a=xlCellPosition(range[2]),b=xlCellPosition(range[3]);
-      var rv=values(range[1]);
-      if(a&&b&&rv.length){
-        xlShowWorkspace();
-        var n=0,ri=0;
-        for(var rr=a.row;rr<=b.row;rr++){
-          for(var cc=a.col;cc<=b.col;cc++){
-            var ref=String.fromCharCode(65+cc)+rr;
-            var value=rv[ri%rv.length];
-            if(xlSetCell(ref,value))n++;
-            ri++;
-          }
-        }
-        if(n)return reply('✓ filled '+n+' cell(s) in '+range[2]+':'+range[3]+' · saved to private Excel workspace');
+      if(xlSetCell(cell[2],cell[1].replace(/^["']|["']$/g,''))){
+        saveXlWorkspace();
+        if(botBubble)botBubble.textContent='✓ typed into '+cell[2]+' · saved to private Excel workspace';
+        return true;
       }
     }
 
-    var start=q.match(/^(?:type|put|enter|write|add|paste)\s+([\s\S]+?)\s+(?:starting\s+at|starting\s+from)\s+([A-Z]{1,3}\d+)\s+(?:in|into|on)\s+(?:the\s+)?(?:spreadsheet|excel|sheet)\s*$/i);
+    var start=q.match(/^(?:type|put|enter|write|add)\s+(.+?)\s+(?:starting\s+at|starting\s+from)\s+([A-Z]{1,3}\d+)\s+(?:in|into)\s+(?:the\s+)?(?:spreadsheet|excel|sheet)\s*$/i);
     if(start){
-      var sv=values(start[1]);
+      var values=xlParseValues(start[1]);
       xlShowWorkspace();
-      var sc=xlSetRow(start[2],sv);
-      if(sc)return reply('✓ inserted '+sc+' value(s) starting at '+start[2]+' · saved to private Excel workspace');
-    }
-
-    var byHeader=q.match(/^(?:fill|put|enter|write|add)\s+(?:the\s+)?(?:column\s+)?["']?([^"':]+)["']?\s+(?:with|using)\s+([\s\S]+?)\s+(?:in|into|on)\s+(?:the\s+)?(?:spreadsheet|excel|sheet)\s*$/i);
-    if(byHeader){
-      xlShowWorkspace();
-      var header=byHeader[1].trim().toLowerCase(),tbl=$('#xl-grid');
-      var headerCol=0;
-      for(var hc=1;hc<tbl.rows[1].cells.length;hc++){
-        if((tbl.rows[1].cells[hc].textContent||'').trim().toLowerCase()===header){
-          headerCol=hc;
-          break;
-        }
-      }
-      if(headerCol){
-        var hv=values(byHeader[2]),hn=0;
-        for(var hi=0;hi<hv.length && hi+2<=50;hi++){
-          var href=String.fromCharCode(64+headerCol)+(hi+2);
-          if(xlSetCell(href,clean(hv[hi])))hn++;
-        }
-        if(hn)return reply('✓ filled column "'+byHeader[1].trim()+'" with '+hn+' value(s) · saved to private Excel workspace');
+      var changed=xlSetRow(start[2],values);
+      if(changed){
+        saveXlWorkspace();
+        if(botBubble)botBubble.textContent='✓ typed '+changed+' value(s) starting at '+start[2]+' · saved to private Excel workspace';
+        return true;
       }
     }
 
-    var col=q.match(/^(?:fill|put|enter|write|add)\s+(?:the\s+)?column\s+([A-Z]{1,3})(?:\s+(?:starting\s+at|from)\s+row\s+(\d+))?\s+(?:with|using)\s+([\s\S]+?)\s*$/i);
+    var col=q.match(/^(?:fill|put|enter|write|add)\s+(?:the\s+)?column\s+([A-Z]{1,3})(?:\s+(?:starting\s+at|from)\s+row\s+(\d+))?\s+(?:with|using)\s+(.+?)\s*$/i);
     if(col){
-      var cv=values(col[3]);
+      var values2=xlParseValues(col[3]);
       xlShowWorkspace();
-      var cn=xlSetColumn(col[1],parseInt(col[2]||'1',10),cv);
-      if(cn)return reply('✓ filled column '+col[1]+' with '+cn+' value(s) · saved to private Excel workspace');
-    }
-
-    var headerSet=q.match(/^(?:set|make|create)\s+(?:the\s+)?headers?\s+(?:to|as)\s+([\s\S]+?)\s*(?:in|into|on)\s+(?:the\s+)?(?:spreadsheet|excel|sheet)?$/i);
-    if(headerSet){
-      var hh=values(headerSet[1]);
-      xlShowWorkspace();
-      var hcount=xlSetRow(1,hh);
-      if(hcount)return reply('✓ set '+hcount+' spreadsheet header(s) · saved to private Excel workspace');
-    }
-
-    var explicitRow=q.match(/^(?:put|enter|write|add|fill)\s+row\s+(\d+)\s*(?:with|as|:)\s*([\s\S]+?)\s*$/i);
-    if(explicitRow){
-      var ev=values(explicitRow[2]);
-      xlShowWorkspace();
-      var ec=xlSetRow(explicitRow[1],ev);
-      if(ec)return reply('✓ filled row '+explicitRow[1]+' with '+ec+' value(s) · saved to private Excel workspace');
-    }
-
-    var nextRow=q.match(/^(?:add|append|insert|put|enter|write|paste)\s+(?:a\s+)?(?:new\s+)?row\s*(?:with|as|:)\s*([\s\S]+?)\s*(?:to|into|in|on)\s+(?:the\s+)?(?:spreadsheet|excel|sheet)\s*$/i);
-    if(nextRow){
-      var nr=xlFirstEmptyRow();
-      if(nr){
-        var nv=values(nextRow[1]),nc=xlSetRow(nr,nv);
-        if(nc)return reply('✓ added row '+nr+' with '+nc+' value(s) · saved to private Excel workspace');
+      var changed2=xlSetColumn(col[1],parseInt(col[2]||'1',10),values2);
+      if(changed2){
+        saveXlWorkspace();
+        if(botBubble)botBubble.textContent='✓ filled column '+col[1]+' with '+changed2+' value(s) · saved to private Excel workspace';
+        return true;
       }
     }
 
-    var table=q.match(/^(?:create|make|put|paste|enter|write|add|fill)\s+(?:this\s+)?(?:table|data|rows?)\s+(?:in|into|on)\s+(?:the\s+)?(?:spreadsheet|excel|sheet)\s*:\s*([\s\S]+)$/i);
+    var table=q.match(/^(?:create|make|put|paste|enter|write|add|fill)\s+(?:this\s+)?(?:table|data)\s+(?:in|into|on)\s+(?:the\s+)?(?:spreadsheet|excel|sheet)\s*:\s*([\s\S]+)$/i);
     if(table){
       var raw=table[1].trim();
-      var rows=raw.split(/\r?\n/)
-        .filter(function(v){return v.trim()!==''})
-        .map(function(line){return values(line)});
+      var rows=raw.split(/\r?\n/).filter(function(v){return v.trim()!==''}).map(function(line){
+        return xlParseValues(line);
+      });
       xlShowWorkspace();
-      var tr=xlFirstEmptyRow();
-      var tc=tr?xlSetMatrix('A'+tr,rows):0;
-      if(tc)return reply('✓ inserted '+tc+' cell value(s) into the Excel workspace · saved privately');
-    }
-
-     var clear=q.match(/^(?:clear|erase|empty|delete)\s+(?:the\s+)?(?:contents?\s+of\s+)?(?:cell\s+)?([A-Z]{1,3}\d+)(?:\s*(?:to|through|-)\s*([A-Z]{1,3}\d+))?\s*$/i);
-    if(clear){
-      xlShowWorkspace();
-      var from=xlCellPosition(clear[1]);
-      var to=xlCellPosition(clear[2]||clear[1]);
-      var ccount=0;
-      if(from&&to){
-        for(var cr=from.row;cr<=to.row;cr++){
-          for(var ccol=from.col;ccol<=to.col;ccol++){
-            if(xlSetCell(String.fromCharCode(65+ccol)+cr,''))ccount++;
-          }
-        }
-        if(ccount)return reply('✓ cleared '+ccount+' cell(s) · saved to private Excel workspace');
+      var changed3=xlSetMatrix('A'+xlFirstEmptyRow(),rows);
+      if(changed3){
+        saveXlWorkspace();
+        if(botBubble)botBubble.textContent='✓ inserted '+changed3+' cell value(s) into the Excel workspace';
+        return true;
       }
     }
 
-    var formula=q.match(/^(?:put|enter|write|set)\s+(?:the\s+)?formula\s+([\s\S]+?)\s+(?:in|into)\s+(?:cell\s+)?([A-Z]{1,3}\d+)\s*$/i);
-    if(formula){
-      xlShowWorkspace();
-      if(xlSetCell(formula[2],clean(formula[1])))return reply('✓ formula placed in '+formula[2]+' · saved to private Excel workspace');
-    }
-
-    var simple=q.match(/^(?:type|put|enter|write|add|paste|place|insert)\s+([\s\S]+?)\s+(?:in|into|on)\s+(?:the\s+)?(?:spreadsheet|excel|sheet)\s*$/i);
+    var simple=q.match(/^(?:type|put|enter|write|add)\s+(.+?)\s+(?:in|into|on)\s+(?:the\s+)?(?:spreadsheet|excel|sheet)\s*$/i);
     if(simple){
-      var sv3=values(simple[1]);
+      var values3=xlParseValues(simple[1]);
       xlShowWorkspace();
       var target=xlFirstEmptyRow();
       if(target){
-        var changed=xlSetRow(target,sv3);
-        if(changed)return reply('✓ inserted '+changed+' value(s) into Excel row '+target+' · saved to private workspace');
+        var changed4=xlSetRow(target,values3);
+        if(changed4){
+          saveXlWorkspace();
+          if(botBubble)botBubble.textContent='✓ typed '+changed4+' value(s) into Excel row '+target+' · saved to private workspace';
+          return true;
+        }
       }
+    }
+
+    if(/^(?:show|open)\s+(?:the\s+)?(?:spreadsheet|excel|sheet)\s*$/i.test(lower)){
+      xlShowWorkspace();
+      if(botBubble)botBubble.textContent='✓ Excel workspace opened';
+      return true;
     }
 
     return false;
