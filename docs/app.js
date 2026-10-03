@@ -539,7 +539,6 @@ enterDash();
     chatLog.classList.remove('hidden');
     var u=document.createElement('div');u.className='msg user';u.textContent=t;chatLog.appendChild(u);
     var b=document.createElement('div')
-```
   if(sendBtn)sendBtn.addEventListener('click',sendChat);
   function armSend(){if(sendBtn&&chatIn)sendBtn.classList.toggle('armed',chatIn.value.trim().length>0)}
   if(chatIn)chatIn.addEventListener('input',function(){armSend();updateIdle()});
