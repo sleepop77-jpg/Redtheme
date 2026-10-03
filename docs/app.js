@@ -855,6 +855,12 @@ enterDash();
   }
   async function askLocalAI(question, botBubble) {
     var logFn = function(msg) { botBubble.textContent = msg; chatLog.scrollTop = chatLog.scrollHeight; };
+
+    if(tryDirectExcelCommand(question,botBubble)){
+      chatLog.classList.remove('hidden');
+      return;
+    }
+
     generationQueue = generationQueue.then(async () => {
       var sysPrompt = "You are PushBridge AI, an expert coding assistant running locally in the browser. The user is working on a GitHub repository.\nFile structure:\n";
       var excelContext=xlWorkspaceContext();
