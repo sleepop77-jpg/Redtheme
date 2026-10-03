@@ -141,6 +141,7 @@ enterDash();
     var tn=$('#tb-name');if(tn)tn.textContent=state.repo?state.repo.full_name:'—';
     loadTree();
     show('dash');
+    restorePushLoops();
   }
   var segs=document.querySelectorAll('.seg-btn');
   segs.forEach(function(s){s.addEventListener('click',function(){
@@ -151,6 +152,284 @@ enterDash();
     document.querySelectorAll('#dash-canvas [data-seg]').forEach(function(el){el.classList.toggle('hidden',el.dataset.seg!==s.dataset.seg)});
   })});
   var sendBtn=$('#chat-send'),chatIn=$('#chat-input'),chatLog=$('#chat-log');
+  /* ---- RECURRING EXCEL LOOPS ---- */
+  var pushLoops=[];
+  var pushLoopTimers={};
+  var pushLoopKey='pb_excel_loops';
+
+  function loadPushLoops(){
+    try{
+      var data=JSON.parse(localStorage.getItem(pushLoopKey)||'[]');
+      pushLoops=Array.isArray(data)?data:[];
+    }catch(e){pushLoops=[]}
+  }
+
+  function savePushLoops(){
+    try{localStorage.setItem(pushLoopKey,JSON.stringify(pushLoops))}catch(e){}
+  }
+
+  function parseLoopDuration(text){
+    var m=String(text||'').trim().toLowerCase().match(/^(\d+(?:\.\d+)?)\s*(s|sec|secs|second|seconds|m|min|mins|minute|minutes|h|hr|hrs|hour|hours|d|day|days)$/);
+    if(!m)return 0;
+    var n=parseFloat(m[1]),u=m[2];
+    if(/^s/.test(u))return n*1000;
+    if(/^m/.test(u))return n*60000;
+    if(/^h/.test(u))return n*3600000;
+    return n*86400000;
+  }
+
+  function loopBubble(msg){
+    if(!chatLog)return;
+    chatLog.classList.remove('hidden');
+    var b=document.createElement('div');
+    b.className='msg bot';
+    b.textContent=msg;
+    chatLog.appendChild(b);
+    chatLog.scrollTop=chatLog.scrollHeight;
+  }
+
+  function loopKey(){
+    return state.repo?state.repo.full_name+'@'+state.repo.branch:'';
+  }
+
+  async function runCommitExcelLoop(loop){
+    if(!state.repo)throw new Error('No repository selected');
+
+    var key='pb_seen_commits_'+loopKey();
+    var seen=[];
+    try{seen=JSON.parse(localStorage.getItem(key)||'[]')}catch(e){seen=[]}
+    if(!Array.isArray(seen))seen=[];
+
+    var r=await apiGet('/repos/'+state.repo.full_name+'/commits?sha='+encodeURIComponent(state.repo.branch)+'&per_page=30');
+    var commits=Array.isArray(r.json)?r.json:[];
+    if(!commits.length)return'✓ checked commits · none found';
+
+    buildXl();
+
+    if(xlFirstEmptyRow()===1){
+      xlSetRow(1,['Checked At','Commit Time','Commit','Author','Message','URL']);
+    }
+
+    var isFirst=!seen.length;
+    var fresh=[];
+
+    commits.forEach(function(c){
+      if(seen.indexOf(c.sha)<0)fresh.push(c);
+    });
+
+    if(isFirst)fresh=commits.slice(0,1);
+    else fresh.reverse();
+
+    var added=0;
+    var checkedAt=new Date().toLocaleString();
+
+    fresh.forEach(function(c){
+      var row=xlFirstEmptyRow();
+      if(!row)return;
+
+      var commitTime=c.commit&&c.commit.author&&c.commit.author.date
+        ?new Date(c.commit.author.date).toLocaleString():'';
+
+      var author=(c.author&&c.author.login)||
+        (c.commit&&c.commit.author&&c.commit.author.name)||
+        'Unknown';
+
+      var message=((c.commit&&c.commit.message)||'').split('\n')[0].trim();
+
+      added+=xlSetRow(row,[
+        checkedAt,
+        commitTime,
+        String(c.sha||'').slice(0,7),
+        author,
+        message,
+        c.html_url||''
+      ]);
+    });
+
+    commits.forEach(function(c){
+      if(seen.indexOf(c.sha)<0)seen.push(c.sha);
+    });
+
+    try{localStorage.setItem(key,JSON.stringify(seen.slice(-100)))}catch(e){}
+    saveXlWorkspace();
+
+    return added
+      ?'✓ logged '+added+' new commit(s) to private Excel workspace'
+      :'✓ checked commits · no new commits';
+  }
+
+  async function runExcelLoop(loop){
+    var task=String(loop.task||'').trim();
+    var lower=task.toLowerCase();
+
+    if(/commit/.test(lower)&&/excel|spreadsheet|sheet/.test(lower)){
+      return await runCommitExcelLoop(loop);
+    }
+
+    var b;
+    if(chatLog){
+      chatLog.classList.remove('hidden');
+      b=document.createElement('div');
+      b.className='msg bot';
+      b.textContent='⟳ running: '+task;
+      chatLog.appendChild(b);
+    }
+
+    if(b){
+      await askLocalAI(task,b);
+      return'✓ AI Excel task executed';
+    }
+
+    return'✓ loop executed';
+  }
+
+  function schedulePushLoop(loop,immediate){
+    if(pushLoopTimers[loop.id])clearTimeout(pushLoopTimers[loop.id]);
+
+    pushLoopTimers[loop.id]=setTimeout(async function(){
+      delete pushLoopTimers[loop.id];
+
+      if(!pushLoops.some(function(x){return x.id===loop.id}))return;
+
+      try{
+        var result=await runExcelLoop(loop);
+        loop.lastRun=Date.now();
+        loop.lastResult=result;
+        savePushLoops();
+        loopBubble('⟳ every '+loop.intervalLabel+' · '+new Date().toLocaleTimeString()+'\n'+result);
+      }catch(e){
+        loop.lastRun=Date.now();
+        loop.lastResult='✗ '+(e.message||String(e));
+        savePushLoops();
+        loopBubble('⟳ loop error · '+(e.message||String(e)));
+      }
+
+      schedulePushLoop(loop,false);
+    },immediate?0:loop.interval);
+  }
+
+  function restorePushLoops(){
+    loadPushLoops();
+    if(!state.repo)return;
+
+    pushLoops.forEach(function(loop){
+      if(loop.repo===loopKey()){
+        schedulePushLoop(loop,false);
+      }
+    });
+  }
+
+  function stopPushLoop(id){
+    if(String(id).toLowerCase()==='all'){
+      pushLoops.forEach(function(loop){
+        if(pushLoopTimers[loop.id])clearTimeout(pushLoopTimers[loop.id]);
+      });
+      pushLoops=[];
+      savePushLoops();
+      return true;
+    }
+
+    var idx=pushLoops.findIndex(function(loop,i){
+      return String(i+1)===String(id)||String(loop.id)===String(id);
+    });
+
+    if(idx<0)return false;
+
+    var loop=pushLoops[idx];
+    if(pushLoopTimers[loop.id])clearTimeout(pushLoopTimers[loop.id]);
+    delete pushLoopTimers[loop.id];
+    pushLoops.splice(idx,1);
+    savePushLoops();
+    return true;
+  }
+
+  function listPushLoops(){
+    loadPushLoops();
+    var active=pushLoops.filter(function(loop){
+      return !state.repo||loop.repo===loopKey();
+    });
+
+    if(!active.length){
+      loopBubble('⟳ No active loops for this repository.');
+      return true;
+    }
+
+    var out=['⟳ Active loops:'];
+
+    active.forEach(function(loop,i){
+      out.push(
+        (i+1)+'. every '+loop.intervalLabel+
+        ' · '+loop.task+
+        ' · last: '+(loop.lastRun?new Date(loop.lastRun).toLocaleString():'not run yet')
+      );
+    });
+
+    loopBubble(out.join('\n'));
+    return true;
+  }
+
+  function handleLoopCommand(text){
+    var q=String(text||'').trim();
+
+    if(/^\/loop\s+(?:list|ls)$/i.test(q)){
+      return listPushLoops();
+    }
+
+    var stop=q.match(/^\/loop\s+(?:off|stop|cancel)\s+(all|\d+)$/i);
+    if(stop){
+      if(stopPushLoop(stop[1]))loopBubble('✓ loop '+stop[1]+' stopped');
+      else loopBubble('✗ loop not found: '+stop[1]);
+      return true;
+    }
+
+    var create=q.match(/^\/loop\s+(\d+(?:\.\d+)?\s*(?:s|sec|secs|second|seconds|m|min|mins|minute|minutes|h|hr|hrs|hour|hours|d|day|days))\s+([\s\S]+)$/i);
+
+    if(create){
+      if(!state.repo){
+        loopBubble('✗ Select a GitHub repository first.');
+        return true;
+      }
+
+      var interval=parseLoopDuration(create[1]);
+      if(!interval){
+        loopBubble('✗ Invalid loop interval.');
+        return true;
+      }
+
+      var task=create[2].trim();
+      var loop={
+        id:Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,7),
+        interval:interval,
+        intervalLabel:create[1].replace(/\s+/g,''),
+        task:task,
+        repo:loopKey(),
+        createdAt:Date.now(),
+        lastRun:0,
+        lastResult:''
+      };
+
+      pushLoops.push(loop);
+      savePushLoops();
+      loopBubble('✓ loop created · every '+loop.intervalLabel+'\nTask: '+task+'\nFirst run: now');
+      schedulePushLoop(loop,true);
+      return true;
+    }
+
+    if(/^\/loop\b/i.test(q)){
+      loopBubble(
+        'Loop usage:\n'+
+        '/loop 5m check for commits and paste them in Excel with the time\n'+
+        '/loop 30m add a timestamp to Excel\n'+
+        '/loop list\n'+
+        '/loop off 1\n'+
+        '/loop off all'
+      );
+      return true;
+    }
+
+    return false;
+  }
+
   function dockChat(){var c=document.getElementById('dash-canvas');if(c)c.classList.add('docked')}
   function setIdleBrand(show){
     var el=$('#idle-brand');if(!el)return;
@@ -166,6 +445,14 @@ enterDash();
     var t=chatIn.value.trim();
     if(!t){chatIn.style.borderColor='var(--error)';setTimeout(function(){chatIn.style.borderColor=''},450);chatIn.focus();return}
     dockChat();setIdleBrand(false);
+
+    if(handleLoopCommand(t)){
+      chatIn.value='';
+      armSend();
+      chatIn.focus();
+      return;
+    }
+
     if(/===\s*(PUSHBRIDGE|VIBEBRIDGE)\s*===/i.test(t)){chatIn.value='';armSend();pushPipeline(t);return}
     chatLog.classList.remove('hidden');
     var u=document.createElement('div');u.className='msg user';u.textContent=t;chatLog.appendChild(u);
