@@ -791,6 +791,17 @@ enterDash();
           sysPrompt += "\n=== " + f.path + " ===\n" + f.content.slice(0, 2000) + "\n";
         });
       }
+      sysPrompt += "\nYou also control a private Excel workspace inside PushBridge.";
+      sysPrompt += "\nIf the user says things such as 'type this in the spreadsheet', 'put this in Excel', 'enter this into the sheet', 'fill the spreadsheet', 'add this to the sheet', or asks you to create or modify spreadsheet data, treat that as an instruction to actually modify the spreadsheet.";
+      sysPrompt += "\nWhen such a request is made, do NOT merely describe the data in chat.";
+      sysPrompt += "\nOutput the spreadsheet operation using this exact machine-readable format:";
+      sysPrompt += "\n===PUSHBRIDGE-EXCEL=== v1";
+      sysPrompt += "\nROW 1: value1 | value2 | value3";
+      sysPrompt += "\nSET A1: value";
+      sysPrompt += "\nAPPEND ROW: value1 | value2 | value3";
+      sysPrompt += "\nCLEAR A1";
+      sysPrompt += "\nEND";
+      sysPrompt += "\nThe Excel workspace is private and must never be committed to GitHub unless the user explicitly asks for that.";
       sysPrompt += "\nAnswer the user's questions about their code concisely using the provided file contents. If they ask you to write or fix code, provide the raw code blocks.";
       aiHistory.push({ role: "user", content: question });
       if (aiHistory.length > 10) aiHistory = aiHistory.slice(-10);
