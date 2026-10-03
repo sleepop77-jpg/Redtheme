@@ -453,6 +453,149 @@ enterDash();
     }
   }
 
+  function xlShowWorkspace(){
+    buildXl();
+    var overlay=$('#xl-overlay');
+    if(overlay)overlay.classList.remove('hidden');
+  }
+
+  function xlFirstEmptyRow(){
+    buildXl();
+    var tbl=$('#xl-grid');
+    for(var r=1;r<=50;r++){
+      var empty=true;
+      for(var c=1;c<=10;c++){
+        if((tbl.rows[r].cells[c].textContent||'').trim()){
+          empty=false;
+          break;
+        }
+      }
+      if(empty)return r;
+    }
+    return 0;
+  }
+
+  function xlColumnNumber(letter){
+    var s=String(letter||'').toUpperCase(),n=0;
+    for(var i=0;i<s.length;i++){
+      var code=s.charCodeAt(i);
+      if(code<65||code>90)return 0;
+      n=n*26+(code-64);
+    }
+    return n;
+  }
+
+  function xlSetColumn(letter,startRow,values){
+    var col=xlColumnNumber(letter);
+    startRow=parseInt(startRow,10)||1;
+    if(!col||col>10||startRow<1||startRow>50||!Array.isArray(values))return 0;
+    var count=0;
+    for(var i=0;i<values.length && startRow+i<=50;i++){
+      if(xlSetCell(String(letter).toUpperCase()+(startRow+i),values[i]))count++;
+    }
+    return count;
+  }
+
+  function xlSetMatrix(startRef,rows){
+    var pos=xlCellPosition(startRef);
+    if(!pos||!Array.isArray(rows))return 0;
+    var count=0;
+    for(var r=0;r<rows.length && pos.row+r<=50;r++){
+      var values=rows[r]||[];
+      for(var c=0;c<values.length && pos.col+c<10;c++){
+        var ref=String.fromCharCode(65+pos.col+c)+(pos.row+r);
+        if(xlSetCell(ref,values[c]))count++;
+      }
+    }
+    return count;
+  }
+
+  function xlParseValues(text){
+    var s=String(text||'').trim();
+    if(!s)return[];
+    if(s.indexOf('|')>=0)return s.split('|').map(function(v){return v.trim()}).filter(function(v){return v!==''});
+    if(s.indexOf(',')>=0)return s.split(',').map(function(v){return v.trim()}).filter(function(v){return v!==''});
+    if(s.indexOf('\t')>=0)return s.split('\t').map(function(v){return v.trim()}).filter(function(v){return v!==''});
+    return [s];
+  }
+
+  function tryDirectExcelCommand(question,botBubble){
+    var q=String(question||'').trim();
+    var lower=q.toLowerCase();
+
+    var cell=q.match(/^(?:type|put|enter|write|add)\s+(.+?)\s+(?:in|into)\s+(?:the\s+)?cell\s+([A-Z]{1,3}\d+)\s*$/i);
+    if(cell){
+      xlShowWorkspace();
+      if(xlSetCell(cell[2],cell[1].replace(/^["']|["']$/g,''))){
+        saveXlWorkspace();
+        if(botBubble)botBubble.textContent='✓ typed into '+cell[2]+' · saved to private Excel workspace';
+        return true;
+      }
+    }
+
+    var start=q.match(/^(?:type|put|enter|write|add)\s+(.+?)\s+(?:starting\s+at|starting\s+from)\s+([A-Z]{1,3}\d+)\s+(?:in|into)\s+(?:the\s+)?(?:spreadsheet|excel|sheet)\s*$/i);
+    if(start){
+      var values=xlParseValues(start[1]);
+      xlShowWorkspace();
+      var changed=xlSetRow(start[2],values);
+      if(changed){
+        saveXlWorkspace();
+        if(botBubble)botBubble.textContent='✓ typed '+changed+' value(s) starting at '+start[2]+' · saved to private Excel workspace';
+        return true;
+      }
+    }
+
+    var col=q.match(/^(?:fill|put|enter|write|add)\s+(?:the\s+)?column\s+([A-Z]{1,3})(?:\s+(?:starting\s+at|from)\s+row\s+(\d+))?\s+(?:with|using)\s+(.+?)\s*$/i);
+    if(col){
+      var values2=xlParseValues(col[3]);
+      xlShowWorkspace();
+      var changed2=xlSetColumn(col[1],parseInt(col[2]||'1',10),values2);
+      if(changed2){
+        saveXlWorkspace();
+        if(botBubble)botBubble.textContent='✓ filled column '+col[1]+' with '+changed2+' value(s) · saved to private Excel workspace';
+        return true;
+      }
+    }
+
+    var table=q.match(/^(?:create|make|put|paste|enter|write|add|fill)\s+(?:this\s+)?(?:table|data)\s+(?:in|into|on)\s+(?:the\s+)?(?:spreadsheet|excel|sheet)\s*:\s*([\s\S]+)$/i);
+    if(table){
+      var raw=table[1].trim();
+      var rows=raw.split(/\r?\n/).filter(function(v){return v.trim()!==''}).map(function(line){
+        return xlParseValues(line);
+      });
+      xlShowWorkspace();
+      var changed3=xlSetMatrix('A'+xlFirstEmptyRow(),rows);
+      if(changed3){
+        saveXlWorkspace();
+        if(botBubble)botBubble.textContent='✓ inserted '+changed3+' cell value(s) into the Excel workspace';
+        return true;
+      }
+    }
+
+    var simple=q.match(/^(?:type|put|enter|write|add)\s+(.+?)\s+(?:in|into|on)\s+(?:the\s+)?(?:spreadsheet|excel|sheet)\s*$/i);
+    if(simple){
+      var values3=xlParseValues(simple[1]);
+      xlShowWorkspace();
+      var target=xlFirstEmptyRow();
+      if(target){
+        var changed4=xlSetRow(target,values3);
+        if(changed4){
+          saveXlWorkspace();
+          if(botBubble)botBubble.textContent='✓ typed '+changed4+' value(s) into Excel row '+target+' · saved to private workspace';
+          return true;
+        }
+      }
+    }
+
+    if(/^(?:show|open)\s+(?:the\s+)?(?:spreadsheet|excel|sheet)\s*$/i.test(lower)){
+      xlShowWorkspace();
+      if(botBubble)botBubble.textContent='✓ Excel workspace opened';
+      return true;
+    }
+
+    return false;
+  }
+
   function xlCellPosition(ref){
     var m=String(ref||'').trim().toUpperCase().match(/^([A-Z]{1,3})(\d+)$/);
     if(!m)return null;
