@@ -621,7 +621,16 @@ enterDash();
       aiHistory.push({ role: "assistant", content: fullReply });
 
     } catch (e) {
-      botBubble.textContent = '✗ AI Error: ' + e.message;
+      if (/Model not loaded/i.test(e.message || '') && (+botBubble.dataset.retries || 0) < 4) {
+        botBubble.dataset.retries = (+botBubble.dataset.retries || 0) + 1;
+        botBubble.textContent = '⚡ Warming up GPU memory... (' + botBubble.dataset.retries + '/4)';
+        chatLog.scrollTop = chatLog.scrollHeight;
+        await new Promise(function(r){setTimeout(r, 2000)});
+        aiHistory.pop();
+        askLocalAI(question, botBubble);
+      } else {
+        botBubble.textContent = '✗ AI Error: ' + e.message;
+      }
     }
   }
 
