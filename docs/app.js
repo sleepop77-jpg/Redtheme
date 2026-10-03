@@ -454,7 +454,6 @@ enterDash();
   }
 
   function buildXl(){
-  function buildXl(){
     if(xlBuilt)return;xlBuilt=true;
     var tbl=$('#xl-grid');if(!tbl)return;
     var cols='ABCDEFGHIJ'.split('');
