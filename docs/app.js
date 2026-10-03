@@ -649,6 +649,10 @@ enterDash();
     var logFn = function(msg) { botBubble.textContent = msg; chatLog.scrollTop = chatLog.scrollHeight; };
     generationQueue = generationQueue.then(async () => {
       var sysPrompt = "You are PushBridge AI, an expert coding assistant running locally in the browser. The user is working on a GitHub repository.\nFile structure:\n";
+      var excelContext=xlWorkspaceContext();
+      if(excelContext){
+        sysPrompt+="\nWorkspace Excel data (PRIVATE, NOT committed to GitHub):\n"+excelContext+"\n";
+      }
       var blobs = (lastTree || []).filter(function(e){return e.type==='blob' && SEARCH_EXT.test(e.path) && e.size <= 100000});
       if (blobs.length > 0) {
         sysPrompt += blobs.map(function(e){return e.path}).slice(0, 120).join("\n") + "\n";
