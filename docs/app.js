@@ -453,6 +453,97 @@ enterDash();
     }
   }
 
+  function xlCellPosition(ref){
+    var m=String(ref||'').trim().toUpperCase().match(/^([A-Z]{1,3})(\d+)$/);
+    if(!m)return null;
+    var letters=m[1],row=parseInt(m[2],10),col=0;
+    for(var i=0;i<letters.length;i++)col=col*26+(letters.charCodeAt(i)-64);
+    col--;
+    if(row<1||row>50||col<0||col>=10)return null;
+    return {row:row,col:col};
+  }
+
+  function xlSetCell(ref,value){
+    buildXl();
+    var pos=xlCellPosition(ref);
+    if(!pos)return false;
+    var tbl=$('#xl-grid');
+    var cell=tbl.rows[pos.row]&&tbl.rows[pos.row].cells[pos.col+1];
+    if(!cell)return false;
+    cell.textContent=String(value==null?'':value);
+    return true;
+  }
+
+  function xlSetRow(rowNumber,values){
+    rowNumber=parseInt(rowNumber,10);
+    if(!rowNumber||rowNumber<1||rowNumber>50||!Array.isArray(values))return 0;
+    var count=0;
+    for(var i=0;i<values.length&&i<10;i++){
+      if(xlSetCell(String.fromCharCode(65+i)+rowNumber,values[i]))count++;
+    }
+    return count;
+  }
+
+  function applyAIExcelActions(reply){
+    var text=String(reply||'');
+    var match=text.match(/===PUSHBRIDGE-EXCEL===\s*v1\s*([\s\S]*?)(?:\nEND\s*$|\n---END---\s*$)/i);
+    if(!match)return {count:0};
+
+    buildXl();
+
+    var overlay=$('#xl-overlay');
+    if(overlay)overlay.classList.remove('hidden');
+
+    var lines=match[1].split(/\r?\n/);
+    var count=0;
+
+    for(var i=0;i<lines.length;i++){
+      var line=lines[i].trim();
+      if(!line)continue;
+
+      var set=line.match(/^SET\s+([A-Z]{1,3}\d+)\s*:\s?(.*)$/i);
+      if(set){
+        if(xlSetCell(set[1],set[2]))count++;
+        continue;
+      }
+
+      var row=line.match(/^ROW\s+(\d+)\s*:\s?(.*)$/i);
+      if(row){
+        count+=xlSetRow(row[1],row[2].split('|').map(function(v){return v.trim()}));
+        continue;
+      }
+
+      var append=line.match(/^APPEND\s+ROW\s*:\s?(.*)$/i);
+      if(append){
+        var tbl=$('#xl-grid');
+        var target=0;
+        for(var rr=1;rr<=50;rr++){
+          var empty=true;
+          for(var cc=1;cc<=10;cc++){
+            if((tbl.rows[rr].cells[cc].textContent||'').trim()){
+              empty=false;
+              break;
+            }
+          }
+          if(empty){
+            target=rr;
+            break;
+          }
+        }
+        if(target)count+=xlSetRow(target,append[1].split('|').map(function(v){return v.trim()}));
+        continue;
+      }
+
+      var clear=line.match(/^CLEAR\s+([A-Z]{1,3}\d+)$/i);
+      if(clear){
+        if(xlSetCell(clear[1],''))count++;
+      }
+    }
+
+    if(count)saveXlWorkspace();
+    return {count:count};
+  }
+
   function buildXl(){
     if(xlBuilt)return;xlBuilt=true;
     var tbl=$('#xl-grid');if(!tbl)return;
