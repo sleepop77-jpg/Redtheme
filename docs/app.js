@@ -518,6 +518,7 @@ enterDash();
   var mlcEngine = null;
   var aiLoading = false;
   var aiHistory = [];
+  var aiMinimal = false;
 
   var MODEL_PREFS=[/qwen2\.5[-.]?1\.5b/i,/qwen2\.5[-.]?0\.5b/i,/qwen/i,/llama-3\.2-1b/i,/smollm2/i,/tinyllama/i];
   var MODEL_FALLBACK=['Qwen2.5-1.5B-Instruct-q4f16_1','Qwen2.5-0.5B-Instruct-q4f16_1','Qwen2-1.5B-Instruct-q4f16_1','Llama-3.2-1B-Instruct-q4f16_1','SmolLM2-1.7B-Instruct-q4f16_1','TinyLlama-1.1B-Chat-v1.0-q4f16_1'];
@@ -589,7 +590,7 @@ enterDash();
       var sysPrompt = "You are PushBridge AI, an expert coding assistant running locally in the browser. The user is working on a GitHub repository.\nFile structure:\n";
       var blobs = (lastTree || []).filter(function(e){return e.type==='blob' && SEARCH_EXT.test(e.path) && e.size <= 100000});
       if (blobs.length > 0) {
-        sysPrompt += blobs.map(function(e){return e.path}).slice(0, 120).join("\n") + "\n\n";
+        sysPrompt += blobs.map(function(e){return e.path}).slice(0, 60).join("\n") + "\n\n";
       }
       var terms = (question.toLowerCase().match(/[a-z0-9_]{3,}/g) || []).filter(function(v,i,a){return a.indexOf(v)===i}).slice(0, 5);
       var scored = [];
@@ -606,17 +607,17 @@ enterDash();
         if (score > 0) scored.push({path: blobs[i].path, score: score, content: content});
       }
       scored.sort(function(a,b){return b.score - a.score});
-      if (scored.length > 0) {
+      if (scored.length > 0 && !aiMinimal) {
         sysPrompt += "Most relevant file contents:\n";
         scored.slice(0, 2).forEach(function(f) {
-          sysPrompt += "\n=== " + f.path + " ===\n" + f.content.slice(0, 2000) + "\n";
+          sysPrompt += "\n=== " + f.path + " ===\n" + f.content.slice(0, 1200) + "\n";
         });
       }
       sysPrompt += "\nAnswer the user's questions about their code concisely using the provided file contents. If they ask you to write or fix code, provide the raw code blocks.";
 
-      aiHistory.push({ role: "user", content: question });
-      // Keep history manageable for the 1.5B model's context window
-      if (aiHistory.length > 10) aiHistory = aiHistory.slice(-10);
+      aiHistory.push({ role: "user", content: question.slice(0, 1500) });
+      if (aiHistory.length > 6) aiHistory = aiHistory.slice(-6);
+      aiHistory = aiHistory.map(function(m){return {role: m.role, content: (m.content || '').slice(0, 900)}});
 
       showThinking(botBubble);
       
@@ -638,15 +639,26 @@ enterDash();
         }
       }
       
+      aiMinimal = false;
+      botBubble.dataset.retries = 0; botBubble.dataset.ovf = 0;
       aiHistory.push({ role: "assistant", content: fullReply });
 
     } catch (e) {
-      if (/Model not loaded/i.test(e.message || '') && (+botBubble.dataset.retries || 0) < 4) {
+      if (/Model not loaded/i.test(e.message || '') && (+botBubble.dataset.retries || 0) < 2) {
         botBubble.dataset.retries = (+botBubble.dataset.retries || 0) + 1;
-        botBubble.textContent = '⚡ Warming up GPU memory... (' + botBubble.dataset.retries + '/4)';
+        botBubble.textContent = '⚡ Engine stalled — force-reloading model... (' + botBubble.dataset.retries + '/2)';
         chatLog.scrollTop = chatLog.scrollHeight;
-        await new Promise(function(r){setTimeout(r, 2000)});
+        try { if (mlcEngine && mlcEngine.reset) await mlcEngine.reset(); } catch (r1) {}
+        mlcEngine = null; aiLoading = false;
         aiHistory.pop();
+        askLocalAI(question, botBubble);
+      } else if (/context|token|length|exceed/i.test(e.message || '') && !(+botBubble.dataset.ovf)) {
+        botBubble.dataset.ovf = 1;
+        aiMinimal = true;
+        aiHistory = aiHistory.slice(-2);
+        aiHistory.pop();
+        botBubble.textContent = '⚡ Context overflow — retrying with minimal memory...';
+        chatLog.scrollTop = chatLog.scrollHeight;
         askLocalAI(question, botBubble);
       } else {
         botBubble.textContent = '✗ AI Error: ' + e.message;
