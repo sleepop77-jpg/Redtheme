@@ -827,7 +827,173 @@ enterDash();
     return [s];
   }
 
+  function smartExcelCommand(question,botBubble){
+    var q=String(question||'').trim();
+    var lower=q.toLowerCase();
+
+    function say(msg){
+      saveXlWorkspace();
+      if(botBubble)botBubble.textContent=msg;
+      return true;
+    }
+
+    function vals(text){
+      var s=String(text||'').trim();
+      if(!s)return[];
+      if(s.indexOf('|')>=0)return s.split('|').map(function(v){return v.trim()});
+      if(/,/.test(s))return s.split(',').map(function(v){return v.trim()}).filter(function(v){return v!==''});
+      return[s];
+    }
+
+    function headerCol(name){
+      buildXl();
+      var tbl=$('#xl-grid'),needle=String(name||'').trim().toLowerCase();
+      if(!tbl||!needle)return 0;
+      for(var c=1;c<=10;c++){
+        var v=(tbl.rows[1].cells[c].textContent||'').trim().toLowerCase();
+        if(v===needle)return c;
+      }
+      return 0;
+    }
+
+    function clearCell(ref){
+      return xlSetCell(ref,'');
+    }
+
+    function clearRow(row){
+      var n=0;
+      for(var c=0;c<10;c++){
+        if(clearCell(String.fromCharCode(65+c)+row))n++;
+      }
+      return n;
+    }
+
+    function clearColumn(col){
+      var letter=String(col||'').toUpperCase(),n=0;
+      for(var r=1;r<=50;r++){
+        if(clearCell(letter+r))n++;
+      }
+      return n;
+    }
+
+    if(/^(?:show|open|view|display)\s+(?:the\s+)?(?:spreadsheet|excel|sheet|workbook)$/i.test(q)){
+      xlShowWorkspace();
+      if(botBubble)botBubble.textContent='✓ Excel workspace opened';
+      return true;
+    }
+
+    var setCell=q.match(/^(?:set|put|place|write|type|enter|insert)\s+(.+?)\s+(?:in|into|inside|at|on)\s+(?:cell\s+)?([A-Z]{1,3}\d+)\s*$/i);
+    if(setCell){
+      xlShowWorkspace();
+      if(xlSetCell(setCell[2],setCell[1].replace(/^["']|["']$/g,''))){
+        return say('✓ placed value in '+setCell[2]+' · saved to private Excel workspace');
+      }
+    }
+
+    var rowAt=q.match(/^(?:set|put|write|enter|fill)\s+(?:row\s+)?(\d+)\s*(?:to|as|with|:)\s*(.+)$/i);
+    if(rowAt){
+      var rv=vals(rowAt[2]);
+      xlShowWorkspace();
+      var rn=xlSetRow(rowAt[1],rv);
+      if(rn)return say('✓ filled row '+rowAt[1]+' with '+rn+' value(s) · saved privately');
+    }
+
+    var flexCol=q.match(/^(?:fill|put|write|enter|add|set)\s+(?:the\s+)?(?:column\s+)?([A-Z]{1,3}|["'][^"']+["'])\s+(?:with|using|to)\s+(.+?)(?:\s+(?:in|into|on)\s+(?:the\s+)?(?:spreadsheet|excel|sheet))?\s*$/i);
+    if(flexCol){
+      var colName=flexCol[1].replace(/^["']|["']$/g,'');
+      var colNum=/^[A-Z]{1,3}$/i.test(colName)?xlColumnNumber(colName):headerCol(colName);
+      if(colNum&&colNum<=10){
+        var cv=vals(flexCol[2]),n=0;
+        xlShowWorkspace();
+        for(var ci=0;ci<cv.length&&ci<50;ci++){
+          if(xlSetCell(String.fromCharCode(64+colNum)+(ci+1),cv[ci]))n++;
+        }
+        if(n)return say('✓ filled '+n+' value(s) in '+colName+' · saved privately');
+      }
+    }
+
+    var underHeader=q.match(/^(?:put|enter|write|add|place)\s+(.+?)\s+(?:under|below|in)\s+(?:the\s+)?(?:header|column)\s+["']?([^"']+?)["']?\s*(?:in|into|on)\s+(?:the\s+)?(?:spreadsheet|excel|sheet)\s*$/i);
+    if(underHeader){
+      var hc=headerCol(underHeader[2]);
+      if(hc){
+        var uv=vals(underHeader[1]),un=0;
+        xlShowWorkspace();
+        for(var ui=0;ui<uv.length&&ui<49;ui++){
+          if(xlSetCell(String.fromCharCode(64+hc)+(ui+2),uv[ui]))un++;
+        }
+        if(un)return say('✓ placed '+un+' value(s) under '+underHeader[2]+' · saved privately');
+      }
+    }
+
+    var repeat=q.match(/^(?:repeat|duplicate)\s+(.+?)\s+(?:for|x|times)\s+(\d+)\s*(?:times?)?\s+(?:in|into|on)\s+(?:the\s+)?(?:spreadsheet|excel|sheet)\s*$/i);
+    if(repeat){
+      var count=Math.max(0,Math.min(50,parseInt(repeat[2],10)));
+      var text=repeat[1].trim(),start=xlFirstEmptyRow(),n2=0;
+      xlShowWorkspace();
+      for(var ri=0;ri<count&&start+ri<=50;ri++){
+        if(xlSetCell('A'+(start+ri),text))n2++;
+      }
+      if(n2)return say('✓ repeated value '+n2+' time(s) starting at A'+start+' · saved privately');
+    }
+
+    var numberRows=q.match(/^(?:number|numbering)\s+(?:the\s+)?rows?\s+(?:from\s+)?(\d+)\s+(?:to|through|-)\s+(\d+)\s+(?:in|into|on)\s+(?:the\s+)?(?:spreadsheet|excel|sheet)\s*$/i);
+    if(numberRows){
+      var from=parseInt(numberRows[1],10),to=parseInt(numberRows[2],10),nn=0,step=from<=to?1:-1;
+      xlShowWorkspace();
+      for(var ni=0,x=from;(step>0?x<=to:x>=to)&&ni<50;x+=step,ni++){
+        if(xlSetCell('A'+(ni+1),x))nn++;
+      }
+      if(nn)return say('✓ numbered '+nn+' row(s) in column A · saved privately');
+    }
+
+    var copy=q.match(/^(?:copy|duplicate)\s+([A-Z]{1,3}\d+)\s*(?:to|into)\s*([A-Z]{1,3}\d+)\s*$/i);
+    if(copy){
+      xlShowWorkspace();
+      var src=xlCellPosition(copy[1]),dst=xlCellPosition(copy[2]),tbl=$('#xl-grid');
+      if(src&&dst&&tbl&&tbl.rows[src.row]){
+        var value=tbl.rows[src.row].cells[src.col+1].textContent||'';
+        if(xlSetCell(copy[2],value))return say('✓ copied '+copy[1]+' → '+copy[2]+' · saved privately');
+      }
+    }
+
+    var clearR=q.match(/^(?:clear|erase|empty|delete)\s+(?:the\s+)?row\s+(\d+)\s*$/i);
+    if(clearR){
+      xlShowWorkspace();
+      var cr=clearRow(parseInt(clearR[1],10));
+      if(cr)return say('✓ cleared row '+clearR[1]+' · saved privately');
+    }
+
+    var clearC=q.match(/^(?:clear|erase|empty|delete)\s+(?:the\s+)?column\s+([A-Z]{1,3})\s*$/i);
+    if(clearC){
+      xlShowWorkspace();
+      var cc=clearColumn(clearC[1]);
+      if(cc)return say('✓ cleared column '+clearC[1]+' · saved privately');
+    }
+
+    var aggregate=q.match(/^(?:sum|total|add up|average|avg|count)\s+(?:the\s+)?(?:values\s+in\s+)?column\s+([A-Z]{1,3})(?:\s+(?:and\s+)?put\s+(?:the\s+)?result\s+(?:in|into)\s+(?:cell\s+)?([A-Z]{1,3}\d+))?\s*$/i);
+    if(aggregate){
+      xlShowWorkspace();
+      var letter=aggregate[1].toUpperCase(),numbers=[],tbl2=$('#xl-grid');
+      for(var ar=1;ar<=50;ar++){
+        var raw=tbl2.rows[ar].cells[xlColumnNumber(letter)].textContent||'';
+        var num=parseFloat(raw);
+        if(raw.trim()!==''&&!isNaN(num))numbers.push(num);
+      }
+
+      var op=lower.split(/\s+/)[0],result=0;
+      if(/^count$/.test(op))result=numbers.length;
+      else if(/^average$|^avg$/.test(op))result=numbers.length?numbers.reduce(function(a,b){return a+b},0)/numbers.length:0;
+      else result=numbers.reduce(function(a,b){return a+b},0);
+
+      var dest=aggregate[2]||('A'+xlFirstEmptyRow());
+      if(xlSetCell(dest,result))return say('✓ '+op+' of column '+letter+' = '+result+' → '+dest);
+    }
+
+    return false;
+  }
+
   function tryDirectExcelCommand(question,botBubble){
+    if(smartExcelCommand(question,botBubble))return true;
     var q=String(question||'').trim();
     var lower=q.toLowerCase();
 
