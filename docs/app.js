@@ -676,29 +676,40 @@ enterDash();
   function b64utf8(b64){return decodeURIComponent(escape(atob(b64.replace(/\n/g,''))))}
   function histPush(){try{return JSON.parse(localStorage.getItem('pb_history')||'[]')}catch(e){return[]}}
   function parsePayload(text){
-    var lines=text.split('\n'),ops=[],cur=null,mode=null,hunk=null;
+    var lines=text.replace(/\r\n/g,'\n').split('\n'),ops=[],cur=null,mode=null,hunk=null;
     for(var i=0;i<lines.length;i++){
       var m=lines[i].match(/^=====\s*(FILE|EDIT|DELETE):\s*(.+?)\s*=====$/);
-      if(m){if(cur)ops.push(cur);cur={type:m[1],path:m[2],content:'',hunks:[]};mode=(m[1]==='EDIT'?'await':'content');continue}
+      if(m){
+        if(cur && cur.type==='EDIT' && hunk){cur.hunks.push(hunk);hunk=null;mode='await';}
+        if(cur)ops.push(cur);
+        cur={type:m[1],path:m[2],content:'',hunks:[]};
+        mode=(m[1]==='EDIT'?'await':'content');
+        continue;
+      }
       if(!cur)continue;
       if(cur.type==='EDIT'){
-        if(/^---\s*FIND\s*$/.test(lines[i])){hunk={find:'',replace:''};mode='find';continue}
-        if(/^---\s*REPLACE\s*$/.test(lines[i])){mode='replace';continue}
-        if(/^---\s*END\s*$/.test(lines[i])){if(hunk)cur.hunks.push(hunk);hunk=null;mode='await';continue}
+        if(/^(?:---\s*FIND\s*|FIND:\s*)$/.test(lines[i])){hunk={find:'',replace:''};mode='find';continue}
+        if(/^(?:---\s*REPLACE\s*|REPLACE:\s*)$/.test(lines[i])){mode='replace';continue}
+        if(/^(?:---\s*END\s*|END\s*)$/.test(lines[i])){if(hunk)cur.hunks.push(hunk);hunk=null;mode='await';continue}
         if(hunk){if(mode==='find')hunk.find+=lines[i]+'\n';else if(mode==='replace')hunk.replace+=lines[i]+'\n'}
         continue;
       }
       cur.content+=lines[i]+'\n';
     }
+    if(cur && cur.type==='EDIT' && hunk)cur.hunks.push(hunk);
     if(cur)ops.push(cur);
     ops.forEach(function(o){
       o.content=o.content.replace(/\n$/,'');
       o.hunks.forEach(function(h){h.find=h.find.replace(/\n$/,'');h.replace=h.replace.replace(/\n$/,'')});
     });
     if(!ops.length)throw new Error('no FILE/EDIT/DELETE ops found in payload');
+    ops.forEach(function(o){
+      if(o.type==='EDIT' && (!o.hunks || !o.hunks.length))throw new Error('EDIT has no valid FIND/REPLACE hunks: '+o.path);
+    });
     return ops;
   }
   function applyHunks(content,hunks){
+    if(!hunks || !hunks.length)throw new Error('EDIT has no valid FIND/REPLACE hunks');
     for(var i=0;i<hunks.length;i++){
       var idx=content.indexOf(hunks[i].find);
       if(idx<0)throw new Error('FIND block not found (hunk '+(i+1)+')');
