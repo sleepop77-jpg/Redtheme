@@ -640,17 +640,50 @@ enterDash();
         if (!navigator.gpu) {
           throw new Error('WEBGPU_UNAVAILABLE');
         }
+
         logFn('✓ WebGPU API available: yes');
+
         var adapter = null;
+        var adapterMode = '';
+        var adapterErrors = [];
+
         try {
-          adapter = await navigator.gpu.requestAdapter();
+          logFn('🔎 Trying high-performance GPU adapter...');
+          adapter = await navigator.gpu.requestAdapter({powerPreference:'high-performance'});
+          if (adapter) {
+            adapterMode = 'high-performance';
+          }
         } catch (e) {
-          throw new Error('WEBGPU_ADAPTER_FAILED');
+          adapterErrors.push('high-performance: '+(e.message||String(e)));
         }
+
         if (!adapter) {
-          throw new Error('WEBGPU_NO_ADAPTER');
+          try {
+            logFn('🔎 High-performance adapter unavailable — trying default adapter...');
+            adapter = await navigator.gpu.requestAdapter();
+            if (adapter) {
+              adapterMode = 'default';
+            }
+          } catch (e) {
+            adapterErrors.push('default: '+(e.message||String(e)));
+          }
         }
-        logFn('✓ Compatible GPU adapter found: yes');
+
+        if (!adapter) {
+          var detail=adapterErrors.length
+            ? ' Details: '+adapterErrors.join(' | ')
+            : '';
+          throw new Error('WEBGPU_NO_ADAPTER'+detail);
+        }
+
+        var adapterInfo='';
+        try {
+          var info=adapter.info||{};
+          var parts=[info.vendor,info.architecture,info.device,info.description].filter(function(v){return v});
+          if(parts.length)adapterInfo=' · '+parts.join(' / ');
+        } catch(e){}
+
+        logFn('✓ Compatible GPU adapter found: '+adapterMode+adapterInfo);
 
         logFn('⚡ Importing WebLLM engine...');
         const webllm = await import("https://esm.run/@mlc-ai/web-llm");
