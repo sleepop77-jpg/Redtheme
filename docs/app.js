@@ -1739,6 +1739,7 @@ probe.classList.add('hidden');scopeLine.classList.add('hidden');
 show('repos');
 });
 /* ---- BOOT ---- */
+updateReleaseBadge();
 if(state.pat&&state.user){if(state.repo)enterDash();else show('repos')}
 else show('login');
 })();
